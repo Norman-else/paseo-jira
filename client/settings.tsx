@@ -201,21 +201,21 @@ export function JiraSettings({ theme, onBack }: PluginSurfaceProps & { onBack?: 
   if (settings.status !== "ready") {
     return (
       <>
+        {back}
         <PluginUpdate theme={theme} />
         <SettingsSection title="Jira connection">
           <Text style={{ color: theme.colors.foreground }}>{settings.error}</Text>
           <SettingsAction label="Restore default settings" actionLabel="Reset" onPress={settings.reset} />
         </SettingsSection>
-        {back}
       </>
     );
   }
   return (
     <>
+      {back}
       <PluginUpdate theme={theme} />
       <Editor settings={settings} theme={theme} />
       <BoardPicker settings={settings} theme={theme} />
-      {back}
     </>
   );
 }

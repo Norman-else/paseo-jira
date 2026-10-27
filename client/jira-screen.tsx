@@ -40,7 +40,7 @@ type Theme = PluginScreenProps["theme"];
 function useStyles(theme: Theme, compact: boolean) {
   return useMemo(
     () => ({
-      screen: { flex: 1, padding: compact ? 12 : 28, gap: 18, width: "100%" as const, maxWidth: 1080, alignSelf: "center" as const, backgroundColor: theme.colors.surface0 },
+      screen: { flex: 1, padding: compact ? 12 : 28, gap: 18, width: "100%" as const, maxWidth: 1440, alignSelf: "center" as const, backgroundColor: theme.colors.surface0 },
       text: { color: theme.colors.foreground },
       muted: { color: theme.colors.foregroundMuted },
       accent: { color: theme.colors.accent, fontWeight: "600" as const },

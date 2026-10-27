@@ -1,5 +1,5 @@
 import type { RpcOutput } from "@getpaseo/plugin";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, Switch, TextInput as RNTextInput, Text, View } from "react-native";
 import {
@@ -26,6 +26,7 @@ import {
   remoteBranchesRpc,
   transitionRpc,
   searchTicketsRpc,
+  ticketDetailsRpc,
   type Sprint,
 } from "../shared/jira";
 
@@ -39,7 +40,7 @@ type Theme = PluginScreenProps["theme"];
 function useStyles(theme: Theme, compact: boolean) {
   return useMemo(
     () => ({
-      screen: { flex: 1, padding: compact ? 12 : 24, gap: 16, width: "100%" as const, maxWidth: 960, alignSelf: "center" as const, backgroundColor: theme.colors.surface0 },
+      screen: { flex: 1, padding: compact ? 12 : 28, gap: 18, width: "100%" as const, maxWidth: 1080, alignSelf: "center" as const, backgroundColor: theme.colors.surface0 },
       text: { color: theme.colors.foreground },
       muted: { color: theme.colors.foregroundMuted },
       accent: { color: theme.colors.accent, fontWeight: "600" as const },
@@ -54,9 +55,10 @@ function useStyles(theme: Theme, compact: boolean) {
       searchBox: {
         flexDirection: "row" as const,
         alignItems: "center" as const,
-        gap: 8,
-        paddingHorizontal: 12,
-        borderRadius: 8,
+        gap: 10,
+        minHeight: 46,
+        paddingHorizontal: 14,
+        borderRadius: 10,
         borderWidth: 1,
         borderColor: theme.colors.border,
         backgroundColor: theme.colors.surface1,
@@ -70,6 +72,13 @@ function useStyles(theme: Theme, compact: boolean) {
         borderWidth: 1,
         borderColor: theme.colors.border,
         backgroundColor: theme.colors.surface1,
+      },
+      ticketCard: {
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface1,
+        overflow: "hidden" as const,
       },
       startButton: {
         flexDirection: "row" as const,
@@ -635,6 +644,123 @@ function StatusModal({
     </Modal>
   );
 }
+
+function formatDate(value: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function DetailField({ label, value, styles, compact }: { label: string; value: string; styles: Styles; compact: boolean }) {
+  return (
+    <View style={{ width: compact ? "100%" : "31%", minWidth: 150, flexGrow: 1, gap: 5 }}>
+      <Text style={[styles.muted, { fontSize: 11, fontWeight: "600", textTransform: "uppercase" }]}>{label}</Text>
+      <Text style={[styles.text, { fontSize: 13, lineHeight: 19 }]}>{value || "None"}</Text>
+    </View>
+  );
+}
+
+function TicketDetails({ item, styles, compact }: { item: ListItem; styles: Styles; compact: boolean }) {
+  const getTicket = useRpc(ticketDetailsRpc);
+  const details = useQuery({
+    queryKey: ["jira-ticket", item.key],
+    queryFn: () => getTicket({ key: item.key }),
+    staleTime: 60_000,
+  });
+  const ticket = details.data;
+
+  return (
+    <View
+      style={{
+        gap: 18,
+        padding: compact ? 14 : 20,
+        borderTopWidth: 1,
+        borderTopColor: styles.fieldBorder.borderColor,
+        backgroundColor: styles.screen.backgroundColor,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <Text style={[styles.text, { fontSize: 14, fontWeight: "600" }]}>Ticket details</Text>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={`Open ${item.key} in Jira`}
+          onPress={() => void openExternalUrl(item.url)}
+          style={({ pressed }) => ({
+            minHeight: 32,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            paddingHorizontal: 8,
+            borderRadius: 6,
+            opacity: pressed ? 0.65 : 1,
+          })}
+        >
+          <Text style={[styles.accent, { fontSize: 12 }]}>Open in Jira</Text>
+          <Icon name="ExternalLink" size={13} color={styles.accent.color} />
+        </Pressable>
+      </View>
+      {details.isPending ? (
+        <View style={{ alignItems: "center", paddingVertical: 20, gap: 8 }}>
+          <ActivityIndicator color={styles.muted.color} />
+          <Text style={[styles.muted, { fontSize: 12 }]}>Loading ticket details…</Text>
+        </View>
+      ) : details.error ? (
+        <View style={{ gap: 12 }}>
+          <Text style={styles.error}>{details.error.message}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Retry loading ${item.key}`}
+            disabled={details.isFetching}
+            onPress={() => void details.refetch()}
+            style={[styles.chip, { alignSelf: "flex-start", minHeight: 32, opacity: details.isFetching ? 0.6 : 1 }]}
+          >
+            <Icon name="RefreshCw" size={13} color={styles.muted.color} />
+            <Text style={[styles.muted, { fontSize: 12 }]}>{details.isFetching ? "Retrying…" : "Retry"}</Text>
+          </Pressable>
+        </View>
+      ) : ticket ? (
+        <>
+          <View style={{ gap: 8 }}>
+            <Text style={[styles.muted, { fontSize: 11, fontWeight: "600", textTransform: "uppercase" }]}>Description</Text>
+            <Text style={[styles.text, { fontSize: 14, lineHeight: 22 }]}>
+              {ticket.description || "No description provided."}
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 18 }}>
+            <DetailField label="Type" value={ticket.type} styles={styles} compact={compact} />
+            <DetailField label="Priority" value={ticket.priority} styles={styles} compact={compact} />
+            <DetailField label="Reporter" value={ticket.reporter ?? "Unassigned"} styles={styles} compact={compact} />
+            <DetailField label="Assignee" value={ticket.assignee ?? "Unassigned"} styles={styles} compact={compact} />
+            <DetailField label="Created" value={formatDate(ticket.created)} styles={styles} compact={compact} />
+            <DetailField label="Updated" value={formatDate(ticket.updated)} styles={styles} compact={compact} />
+          </View>
+          {([
+            ["Labels", ticket.labels],
+            ["Components", ticket.components],
+          ] as const).map(([label, values]) => (
+            <View key={label} style={{ gap: 8 }}>
+              <Text style={[styles.muted, { fontSize: 11, fontWeight: "600", textTransform: "uppercase" }]}>{label}</Text>
+              {values.length ? (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                  {values.map((value) => (
+                    <View key={value} style={[styles.chip, { maxWidth: "100%", minWidth: 0, paddingVertical: 3, backgroundColor: styles.rowSelected.backgroundColor }]}>
+                      <Text style={[styles.muted, { flexShrink: 1, fontSize: 12 }]}>{value}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={[styles.muted, { fontSize: 13 }]}>None</Text>
+              )}
+            </View>
+          ))}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
 type Row = { type: "header"; key: string; title: string; count: number } | { type: "ticket"; key: string; item: ListItem };
 
 const ALL_ACTIVE = "active";
@@ -644,6 +770,7 @@ function sprintLabel(sp: Sprint) {
 }
 
 export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
+  const queryClient = useQueryClient();
   const styles = useStyles(theme, layout.compact);
   const list = useRpc(listTicketsRpc);
   const listSprints = useRpc(listSprintsRpc);
@@ -656,6 +783,7 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
   const [selected, setSelected] = useState<Ticket | null>(null);
   const [transitioning, setTransitioning] = useState<ListItem | null>(null);
   const [assigning, setAssigning] = useState<ListItem | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const sprintId = sprint === ALL_ACTIVE ? null : Number(sprint);
   const tickets = useQuery({
     queryKey: ["jira-list", query, sprintId, mine, showDone],
@@ -704,9 +832,14 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 5 }}
         />
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, zIndex: 10 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 14, zIndex: 10 }}>
         {/* Phones already show "Jira" in the screen header. */}
-        {layout.compact ? null : <Text style={[styles.text, { fontSize: 20, fontWeight: "600" }]}>Jira</Text>}
+        {layout.compact ? null : (
+          <View style={{ gap: 2 }}>
+            <Text style={[styles.text, { fontSize: 24, fontWeight: "700" }]}>Jira</Text>
+            <Text style={[styles.muted, { fontSize: 11 }]}>Sprint workspace</Text>
+          </View>
+        )}
         <View style={{ flexShrink: 1, minWidth: 0 }}>
           <Pressable
             accessibilityRole="button"
@@ -786,6 +919,7 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
           onPress={() => {
             void tickets.refetch();
             void sprints.refetch();
+            if (expandedKey) void queryClient.invalidateQueries({ queryKey: ["jira-ticket", expandedKey] });
           }}
           disabled={refreshing}
           style={({ pressed }) => ({ padding: 6, borderRadius: 6, backgroundColor: pressed ? c.surface2 : "transparent" })}
@@ -839,40 +973,78 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
           renderItem={({ item: row }) => {
             if (row.type === "header") {
               return (
-                <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 8 }}>
-                  <Text style={[styles.text, { fontSize: 13, fontWeight: "600" }]}>{row.title}</Text>
-                  <Text style={[styles.muted, { fontSize: 12 }]}>{row.count}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginTop: 12, marginBottom: 2, paddingHorizontal: 2 }}>
+                  <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: c.accent }} />
+                  <Text style={[styles.text, { fontSize: 14, fontWeight: "600" }]}>{row.title}</Text>
+                  <View style={{ minWidth: 24, alignItems: "center", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: c.surface2 }}>
+                    <Text style={[styles.muted, { fontSize: 11, fontWeight: "600" }]}>{row.count}</Text>
+                  </View>
                 </View>
               );
             }
             const item = row.item;
             const statusColor = tone[item.statusCategory] ?? c.foregroundMuted;
+            const expanded = expandedKey === item.key;
             return (
-              <View style={styles.card}>
-                <Pressable
-                  style={{ flex: 1, gap: 6 }}
-                  onPress={() => void openExternalUrl(item.url)}
-                  accessibilityRole="link"
-                  accessibilityLabel={`Open ${item.key} in Jira`}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Text style={[styles.muted, { fontSize: 12, fontWeight: "600", fontFamily: "monospace" }]}>{item.key}</Text>
+              <View style={[styles.ticketCard, expanded && { borderColor: c.accent }]}>
+                <View style={{ flexDirection: layout.compact ? "column" : "row", alignItems: layout.compact ? "stretch" : "center" }}>
+                  <View style={{ position: "absolute", top: 16, bottom: 16, left: 0, width: 3, backgroundColor: statusColor }} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${expanded ? "Hide" : "Show"} details for ${item.key}: ${item.title}`}
+                    accessibilityState={{ expanded }}
+                    onPress={() => setExpandedKey((current) => (current === item.key ? null : item.key))}
+                    style={({ pressed }) => ({
+                      flex: 1,
+                      minWidth: 0,
+                      gap: 8,
+                      paddingVertical: 16,
+                      paddingHorizontal: 18,
+                      backgroundColor: pressed ? c.surface2 : "transparent",
+                    })}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5, backgroundColor: c.surface2 }}>
+                        <Text style={[styles.muted, { fontSize: 11, fontWeight: "700", fontFamily: "monospace" }]}>{item.key}</Text>
+                      </View>
+                      <View style={{ flex: 1 }} />
+                      <Icon name={expanded ? "ChevronUp" : "ChevronDown"} size={15} color={c.foregroundMuted} />
+                    </View>
+                    <Text style={[styles.text, { fontSize: 15, fontWeight: "500", lineHeight: 21 }]} numberOfLines={2}>
+                      {item.title}
+                    </Text>
+                  </Pressable>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: layout.compact ? "flex-start" : "flex-end",
+                      flexWrap: "wrap",
+                      gap: 8,
+                      maxWidth: layout.compact ? undefined : 390,
+                      paddingLeft: layout.compact ? 14 : 0,
+                      paddingRight: 14,
+                      paddingBottom: layout.compact ? 12 : 0,
+                    }}
+                  >
                     {item.status ? (
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={`Change status of ${item.key}`}
                         onPress={() => setTransitioning(item)}
                         style={({ pressed }) => ({
+                          minHeight: 30,
                           flexDirection: "row",
                           alignItems: "center",
                           gap: 4,
                           backgroundColor: c.surface2,
                           borderRadius: 999,
-                          paddingHorizontal: 8,
-                          paddingVertical: 2,
+                          paddingHorizontal: 9,
+                          paddingVertical: 3,
                           opacity: pressed ? 0.7 : 1,
                         })}
                       >
+                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: statusColor }} />
                         <Text style={{ color: statusColor, fontSize: 11, fontWeight: "600" }}>{item.status}</Text>
                         <Icon name="ChevronDown" size={11} color={statusColor} />
                       </Pressable>
@@ -881,25 +1053,23 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
                       accessibilityRole="button"
                       accessibilityLabel={`Change assignee of ${item.key}`}
                       onPress={() => setAssigning(item)}
-                      style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 4, opacity: pressed ? 0.7 : 1 })}
+                      style={({ pressed }) => ({ minHeight: 32, maxWidth: 160, flexDirection: "row", alignItems: "center", gap: 5, opacity: pressed ? 0.7 : 1 })}
                     >
-                      <Icon name="UserRound" size={12} color={c.foregroundMuted} />
-                      <Text style={[styles.muted, { fontSize: 12 }]}>{item.assignee ?? "Unassigned"}</Text>
+                      <Icon name="UserRound" size={13} color={c.foregroundMuted} />
+                      <Text style={[styles.muted, { fontSize: 12, flexShrink: 1 }]} numberOfLines={1}>{item.assignee ?? "Unassigned"}</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Start ${item.key}`}
+                      style={({ pressed }) => [styles.startButton, { minHeight: 32, opacity: pressed ? 0.7 : 1 }]}
+                      onPress={() => setSelected({ id: item.id, identifier: item.key, title: item.title, url: item.url, text: "", resourceType: "issue" })}
+                    >
+                      <Icon name="Play" size={12} color={c.accent} />
+                      <Text style={{ color: c.accent, fontWeight: "600", fontSize: 13 }}>Start</Text>
                     </Pressable>
                   </View>
-                  <Text style={[styles.text, { fontSize: 14 }]} numberOfLines={2}>
-                    {item.title}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Start ${item.key}`}
-                  style={styles.startButton}
-                  onPress={() => setSelected({ id: item.id, identifier: item.key, title: item.title, url: item.url, text: "", resourceType: "issue" })}
-                >
-                  <Icon name="Play" size={12} color={c.accent} />
-                  <Text style={{ color: c.accent, fontWeight: "600", fontSize: 13 }}>Start</Text>
-                </Pressable>
+                </View>
+                {expanded ? <TicketDetails item={item} styles={styles} compact={layout.compact} /> : null}
               </View>
             );
           }}
@@ -911,7 +1081,10 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
           item={assigning}
           styles={styles}
           onClose={() => setAssigning(null)}
-          onChanged={() => void tickets.refetch()}
+          onChanged={() => {
+            void tickets.refetch();
+            void queryClient.invalidateQueries({ queryKey: ["jira-ticket", assigning.key] });
+          }}
         />
       ) : null}
       {transitioning ? (
@@ -921,7 +1094,10 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
           styles={styles}
           tone={tone}
           onClose={() => setTransitioning(null)}
-          onChanged={() => void tickets.refetch()}
+          onChanged={() => {
+            void tickets.refetch();
+            void queryClient.invalidateQueries({ queryKey: ["jira-ticket", transitioning.key] });
+          }}
         />
       ) : null}
       {selected ? (

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { defaultPrompt, jiraSettings } from "../shared/jira";
 import { buildJql, buildListJql } from "./jql";
+import { descriptionToText } from "./description";
 
 type JiraSettings = z.output<typeof jiraSettings.schema>;
 
@@ -32,6 +33,23 @@ const ListResponseSchema = z.object({
       }),
     }),
   ),
+});
+
+const TicketDetailsResponseSchema = z.object({
+  key: z.string(),
+  fields: z.looseObject({
+    summary: z.string(),
+    description: z.unknown().nullish(),
+    status: z.object({ name: z.string(), statusCategory: z.object({ key: z.string() }) }).nullish(),
+    assignee: z.object({ displayName: z.string() }).nullish(),
+    reporter: z.object({ displayName: z.string() }).nullish(),
+    priority: z.object({ name: z.string() }).nullish(),
+    issuetype: z.object({ name: z.string() }).nullish(),
+    created: z.string().nullish(),
+    updated: z.string().nullish(),
+    labels: z.array(z.string()).nullish(),
+    components: z.array(z.object({ name: z.string() })).nullish(),
+  }),
 });
 
 const FieldsSchema = z.array(z.object({ id: z.string(), schema: z.object({ custom: z.string().optional() }).optional() }));
@@ -159,6 +177,41 @@ export function createJiraClient(settings: JiraSettings) {
         if (page.isLast !== false || page.values.length === 0) break;
       }
       return { boards };
+    },
+    async details(key: string) {
+      const fields = [
+        "summary",
+        "description",
+        "status",
+        "assignee",
+        "reporter",
+        "priority",
+        "issuetype",
+        "created",
+        "updated",
+        "labels",
+        "components",
+      ];
+      const params = new URLSearchParams({ fields: fields.join(",") });
+      const issue = TicketDetailsResponseSchema.parse(
+        await request(`/rest/api/3/issue/${encodeURIComponent(key)}?${params}`),
+      );
+      return {
+        key: issue.key,
+        title: issue.fields.summary,
+        url: `${baseUrl}/browse/${issue.key}`,
+        description: descriptionToText(issue.fields.description),
+        type: issue.fields.issuetype?.name ?? "",
+        priority: issue.fields.priority?.name ?? "",
+        status: issue.fields.status?.name ?? "",
+        statusCategory: issue.fields.status?.statusCategory.key ?? "",
+        assignee: issue.fields.assignee?.displayName ?? null,
+        reporter: issue.fields.reporter?.displayName ?? null,
+        created: issue.fields.created ?? null,
+        updated: issue.fields.updated ?? null,
+        labels: issue.fields.labels ?? [],
+        components: issue.fields.components?.map((component) => component.name) ?? [],
+      };
     },
     async transitions(key: string) {
       const { transitions } = TransitionsSchema.parse(

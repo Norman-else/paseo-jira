@@ -69,6 +69,27 @@ export const listTicketsRpc = defineRpc({
   }),
 });
 
+export const ticketDetailsRpc = defineRpc({
+  name: "jira.ticket",
+  input: z.object({ key: z.string() }),
+  output: z.object({
+    key: z.string(),
+    title: z.string(),
+    url: z.string(),
+    description: z.string(),
+    type: z.string(),
+    priority: z.string(),
+    status: z.string(),
+    statusCategory: z.string(),
+    assignee: z.string().nullable(),
+    reporter: z.string().nullable(),
+    created: z.string().nullable(),
+    updated: z.string().nullable(),
+    labels: z.array(z.string()),
+    components: z.array(z.string()),
+  }),
+});
+
 export const listSprintsRpc = defineRpc({
   name: "jira.sprints",
   input: z.object({}),

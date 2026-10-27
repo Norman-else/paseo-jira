@@ -60,7 +60,7 @@ Settings are stored on the Paseo daemon and are readable by every client connect
 - Sprint switcher: *All active sprints* (of the selected boards) or a single active/upcoming sprint.
 - *Only mine* limits the list to tickets assigned to you.
 - Search by text within the current sprint, or type a ticket key (`ABC-123`) to jump to it.
-- Click a ticket to open it in Jira; click **Start** to launch an agent.
+- Click a ticket to expand its description, metadata, labels and components in place; details load on first expand. Use **Open in Jira** inside the expanded ticket to open the original issue, or **Start** to launch an agent.
 
 **Start modal**
 

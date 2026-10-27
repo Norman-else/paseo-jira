@@ -1,7 +1,7 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { createJiraClient } from "./server/jira";
 import { remoteBranches } from "./server/git";
-import { assignRpc, jiraSettings, searchAssigneesRpc, listBoardsRpc, listTransitionsRpc, transitionRpc, listSprintsRpc, listTicketsRpc, remoteBranchesRpc, searchTicketsRpc, testConnectionRpc } from "./shared/jira";
+import { assignRpc, jiraSettings, searchAssigneesRpc, listBoardsRpc, listTransitionsRpc, transitionRpc, listSprintsRpc, listTicketsRpc, remoteBranchesRpc, searchTicketsRpc, testConnectionRpc, ticketDetailsRpc } from "./shared/jira";
 
 export default function contribute(server: PluginServerContext) {
   const settings = server.registerSettings(jiraSettings);
@@ -14,6 +14,7 @@ export default function contribute(server: PluginServerContext) {
 
   server.handle(searchTicketsRpc, async ({ query }) => (await jira()).search(query));
   server.handle(listTicketsRpc, async (input) => (await jira()).list(input));
+  server.handle(ticketDetailsRpc, async ({ key }) => (await jira()).details(key));
   server.handle(listBoardsRpc, async () => (await jira()).boards());
   server.handle(listSprintsRpc, async () => (await jira()).sprints());
   server.handle(listTransitionsRpc, async ({ key }) => (await jira()).transitions(key));

@@ -43,6 +43,8 @@ paseo plugin add "$(pwd)"
 
 Check it is running with `paseo plugin ls`; see errors with `paseo plugin logs paseo-jira`.
 
+You can also use **Settings → Plugins → Jira → Plugin updates → Check updates** to check for and install updates. The action uses the host update API when available and falls back to the Paseo CLI. Directory installations must be updated from their source checkout and reloaded.
+
 ## Configure
 
 Open **Settings → Plugins → Jira**:

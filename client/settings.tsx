@@ -9,7 +9,7 @@ import {
   SettingsSection,
   SettingsSwitch,
 } from "@getpaseo/plugin/client/ui";
-import { jiraSettings, listBoardsRpc, testConnectionRpc } from "../shared/jira";
+import { jiraSettings, listBoardsRpc, testConnectionRpc, updatePluginRpc } from "../shared/jira";
 
 type Ready = Extract<SettingsState<typeof jiraSettings.schema>, { status: "ready" }>;
 
@@ -109,19 +109,47 @@ function BoardPicker({ settings, theme }: { settings: Ready; theme: PluginSurfac
   );
 }
 
+function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
+  const updatePlugin = useRpc(updatePluginRpc);
+  const update = useMutation({ mutationFn: () => updatePlugin({}) });
+  const messageColor = update.data?.status === "updated" || update.data?.status === "completed"
+    ? theme.colors.statusSuccess
+    : theme.colors.foregroundMuted;
+
+  return (
+    <SettingsSection title="Plugin updates">
+      <SettingsCard>
+        <SettingsAction
+          label="Check for updates"
+          hint="Check for a new paseo-jira version and install it when available."
+          actionLabel={update.isPending ? "Updating…" : "Check updates"}
+          disabled={update.isPending}
+          error={update.error?.message}
+          onPress={() => update.mutate()}
+        />
+        {update.data ? <Text style={{ color: messageColor, paddingHorizontal: 12 }}>{update.data.message}</Text> : null}
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
 export function JiraSettings({ theme }: PluginSurfaceProps) {
   const settings = useSettings(jiraSettings);
   if (settings.status === "loading") return <ActivityIndicator style={{ padding: 12 }} />;
   if (settings.status !== "ready") {
     return (
-      <SettingsSection title="Jira connection">
-        <Text style={{ color: theme.colors.foreground }}>{settings.error}</Text>
-        <SettingsAction label="Restore default settings" actionLabel="Reset" onPress={settings.reset} />
-      </SettingsSection>
+      <>
+        <PluginUpdate theme={theme} />
+        <SettingsSection title="Jira connection">
+          <Text style={{ color: theme.colors.foreground }}>{settings.error}</Text>
+          <SettingsAction label="Restore default settings" actionLabel="Reset" onPress={settings.reset} />
+        </SettingsSection>
+      </>
     );
   }
   return (
     <>
+      <PluginUpdate theme={theme} />
       <Editor settings={settings} theme={theme} />
       <BoardPicker settings={settings} theme={theme} />
     </>

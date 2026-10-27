@@ -131,6 +131,15 @@ export const assignRpc = defineRpc({
   output: z.object({ ok: z.literal(true) }),
 });
 
+export const updatePluginRpc = defineRpc({
+  name: "jira.update-plugin",
+  input: z.object({}),
+  output: z.object({
+    status: z.enum(["updated", "current", "local", "completed"]),
+    message: z.string(),
+  }),
+});
+
 export const testConnectionRpc = defineRpc({
   name: "jira.test-connection",
   input: z.object({}),

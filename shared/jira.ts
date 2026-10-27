@@ -52,7 +52,7 @@ export type Sprint = z.infer<typeof SprintSchema>;
 
 export const listTicketsRpc = defineRpc({
   name: "jira.list",
-  input: z.object({ query: z.string(), sprintId: z.number().nullable(), mine: z.boolean() }),
+  input: z.object({ query: z.string(), sprintId: z.number().nullable(), mine: z.boolean(), showDone: z.boolean() }),
   output: z.object({
     items: z.array(
       z.object({

@@ -475,12 +475,13 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
   const [query, setQuery] = useState("");
   const [sprint, setSprint] = useState(ALL_ACTIVE);
   const [mine, setMine] = useState(true);
+  const [showDone, setShowDone] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selected, setSelected] = useState<Ticket | null>(null);
   const sprintId = sprint === ALL_ACTIVE ? null : Number(sprint);
   const tickets = useQuery({
-    queryKey: ["jira-list", query, sprintId, mine],
-    queryFn: () => list({ query, sprintId, mine }),
+    queryKey: ["jira-list", query, sprintId, mine, showDone],
+    queryFn: () => list({ query, sprintId, mine, showDone }),
   });
   const sprints = useQuery({ queryKey: ["jira-sprints"], queryFn: () => listSprints({}), staleTime: 5 * 60_000 });
   const c = theme.colors;
@@ -577,6 +578,18 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
           ) : null}
         </View>
         <View style={{ flexGrow: 1 }} />
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityLabel="Show done"
+          accessibilityState={{ checked: showDone }}
+          onPress={() => setShowDone((v) => !v)}
+          style={[styles.chip, showDone && { borderColor: c.accent }]}
+        >
+          <Icon name="CircleCheck" size={13} color={showDone ? c.accent : c.foregroundMuted} />
+          {layout.compact ? null : (
+            <Text style={{ color: showDone ? c.accent : c.foregroundMuted, fontSize: 13 }}>Show done</Text>
+          )}
+        </Pressable>
         <Pressable
           accessibilityRole="switch"
           accessibilityLabel="Only mine"

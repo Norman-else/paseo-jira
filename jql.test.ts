@@ -10,7 +10,7 @@ test("buildJql", () => {
 
 test("buildListJql", () => {
   const order = " ORDER BY status ASC, updated DESC";
-  assert.equal(buildListJql({ query: "", sprintIds: null, mine: true }), "sprint in openSprints() AND assignee = currentUser()" + order);
-  assert.equal(buildListJql({ query: "pay", sprintIds: [42, 7], mine: false }), 'sprint in (42, 7) AND text ~ "pay"' + order);
+  assert.equal(buildListJql({ query: "", sprintIds: null, mine: true }), "sprint in openSprints() AND assignee = currentUser() AND statusCategory != Done" + order);
+  assert.equal(buildListJql({ query: "pay", sprintIds: [42, 7], mine: false, showDone: true }), 'sprint in (42, 7) AND text ~ "pay"' + order);
   assert.equal(buildListJql({ query: "psos-1", sprintIds: [42], mine: true }), 'key = "PSOS-1"');
 });

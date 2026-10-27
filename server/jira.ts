@@ -87,7 +87,7 @@ export function createJiraClient(settings: JiraSettings) {
   }
 
   return {
-    async list(input: { query: string; sprintId: number | null; mine: boolean }) {
+    async list(input: { query: string; sprintId: number | null; mine: boolean; showDone: boolean }) {
       const field = await findSprintField();
       let sprintIds: number[] | null = input.sprintId === null ? null : [input.sprintId];
       if (sprintIds === null && settings.boardIds.length > 0) {
@@ -95,7 +95,7 @@ export function createJiraClient(settings: JiraSettings) {
         if (sprintIds.length === 0) return { items: [] };
       }
       const body = {
-        jql: buildListJql({ query: input.query, sprintIds, mine: input.mine }),
+        jql: buildListJql({ query: input.query, sprintIds, mine: input.mine, showDone: input.showDone }),
         maxResults: 100,
         fields: ["summary", "status", "assignee", ...(field ? [field] : [])],
       };

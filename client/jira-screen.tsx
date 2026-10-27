@@ -997,22 +997,26 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
                     style={({ pressed }) => ({
                       flex: 1,
                       minWidth: 0,
-                      gap: 8,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 12,
                       paddingVertical: 16,
-                      paddingHorizontal: 18,
+                      paddingLeft: 12,
+                      paddingRight: 18,
                       backgroundColor: pressed ? c.surface2 : "transparent",
                     })}
                   >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5, backgroundColor: c.surface2 }}>
+                    <View style={{ width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: c.surface2 }}>
+                      <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={18} color={expanded ? c.accent : c.foregroundMuted} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <View style={{ flexShrink: 0, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5, backgroundColor: c.surface2 }}>
                         <Text style={[styles.muted, { fontSize: 11, fontWeight: "700", fontFamily: "monospace" }]}>{item.key}</Text>
                       </View>
-                      <View style={{ flex: 1 }} />
-                      <Icon name={expanded ? "ChevronUp" : "ChevronDown"} size={15} color={c.foregroundMuted} />
+                      <Text style={[styles.text, { flex: 1, minWidth: 0, fontSize: 15, fontWeight: "500", lineHeight: 21 }]} numberOfLines={2}>
+                        {item.title}
+                      </Text>
                     </View>
-                    <Text style={[styles.text, { fontSize: 15, fontWeight: "500", lineHeight: 21 }]} numberOfLines={2}>
-                      {item.title}
-                    </Text>
                   </Pressable>
                   <View
                     style={{

@@ -397,6 +397,8 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
   });
   const sprints = useQuery({ queryKey: ["jira-sprints"], queryFn: () => listSprints({}), staleTime: 5 * 60_000 });
   const c = theme.colors;
+  // Refetches keep the old list on screen, so show progress on the button itself.
+  const refreshing = tickets.isFetching || sprints.isFetching;
   const tone: Record<string, string> = { done: c.statusSuccess, indeterminate: c.statusWarning };
 
   const rows = useMemo<Row[]>(() => {
@@ -411,7 +413,11 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
     ]);
   }, [tickets.data]);
 
-  const current = sprints.data?.sprints.find((sp) => String(sp.id) === sprint);
+  const active = sprints.data?.sprints.filter((sp) => sp.state === "active") ?? [];
+  // With a single active sprint, "all active" *is* that sprint: show it as such instead of a separate option.
+  const soleActive = active.length === 1 ? active[0] : undefined;
+  const current =
+    sprints.data?.sprints.find((sp) => String(sp.id) === sprint) ?? (sprint === ALL_ACTIVE ? soleActive : undefined);
   const boards = new Map<string, Sprint[]>();
   for (const sp of sprints.data?.sprints ?? []) {
     const board = sp.boardName ?? "Board";
@@ -442,9 +448,13 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
           {menuOpen ? (
             <View style={styles.menu}>
               <ScrollView style={{ maxHeight: 420 }}>
-                <Pressable style={styles.menuItem} onPress={() => choose(ALL_ACTIVE)}>
-                  <Text style={sprint === ALL_ACTIVE ? styles.accent : styles.text}>All active sprints</Text>
-                </Pressable>
+                {soleActive ? null : (
+                  <Pressable style={styles.menuItem} onPress={() => choose(ALL_ACTIVE)}>
+                    <Text style={sprint === ALL_ACTIVE ? styles.accent : styles.text}>
+                      All active sprints{active.length ? ` (${active.length})` : ""}
+                    </Text>
+                  </Pressable>
+                )}
                 {sprints.isPending ? <Spinner color={c.foregroundMuted} /> : null}
                 {sprints.error ? <Text style={[styles.error, { padding: 8 }]}>{sprints.error.message}</Text> : null}
                 {sprints.data?.sprints.length === 0 ? (
@@ -454,8 +464,12 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
                   <View key={board}>
                     <Text style={styles.menuGroup}>{board}</Text>
                     {items.map((sp) => (
-                      <Pressable key={sp.id} style={styles.menuItem} onPress={() => choose(String(sp.id))}>
-                        <Text style={String(sp.id) === sprint ? styles.accent : styles.text}>
+                      <Pressable
+                        key={sp.id}
+                        style={styles.menuItem}
+                        onPress={() => choose(sp === soleActive ? ALL_ACTIVE : String(sp.id))}
+                      >
+                        <Text style={sp === current ? styles.accent : styles.text}>
                           {sprintLabel(sp)}
                         </Text>
                       </Pressable>
@@ -483,9 +497,14 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
             void tickets.refetch();
             void sprints.refetch();
           }}
-          style={{ padding: 6, borderRadius: 6 }}
+          disabled={refreshing}
+          style={({ pressed }) => ({ padding: 6, borderRadius: 6, backgroundColor: pressed ? c.surface2 : "transparent" })}
         >
-          <Icon name="RefreshCw" size={16} color={c.foregroundMuted} />
+          {refreshing ? (
+            <ActivityIndicator size="small" color={c.foregroundMuted} style={{ width: 16, height: 16 }} />
+          ) : (
+            <Icon name="RefreshCw" size={16} color={c.foregroundMuted} />
+          )}
         </Pressable>
       </View>
 
@@ -524,6 +543,7 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
         <FlatList
           data={rows}
           keyExtractor={(r) => r.key}
+          style={{ opacity: tickets.isFetching ? 0.6 : 1 }}
           contentContainerStyle={{ gap: 8, paddingBottom: 24 }}
           ListEmptyComponent={<Text style={[styles.muted, { textAlign: "center", padding: 32 }]}>No tickets found.</Text>}
           renderItem={({ item: row }) => {

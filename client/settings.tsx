@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import { useRpc, useSettings, type PluginSurfaceProps, type SettingsState } from "@getpaseo/plugin/client";
 import {
   Icon,
@@ -168,56 +168,43 @@ function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
   );
 }
 
-function BackToJira({ theme, onPress }: { theme: PluginSurfaceProps["theme"]; onPress(): void }) {
+function BackToJira({ onPress }: { onPress(): void }) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Back to Jira"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        alignSelf: "flex-start",
-        minHeight: 32,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-        marginHorizontal: 12,
-        marginBottom: 4,
-        paddingHorizontal: 8,
-        paddingVertical: 6,
-        borderRadius: 6,
-        backgroundColor: pressed ? theme.colors.surface2 : "transparent",
-      })}
-    >
-      <Icon name="ArrowLeft" size={15} color={theme.colors.foregroundMuted} />
-      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13 }}>Back to Jira</Text>
-    </Pressable>
+    <SettingsSection title="Navigation">
+      <SettingsCard>
+        <SettingsAction
+          label="Return to Jira list"
+          hint="Go back to your sprint tickets."
+          actionLabel="Back"
+          onPress={onPress}
+        />
+      </SettingsCard>
+    </SettingsSection>
   );
 }
 
 export function JiraSettings({ theme, onBack }: PluginSurfaceProps & { onBack?: () => void }) {
   const settings = useSettings(jiraSettings);
-  const back = onBack ? <BackToJira theme={theme} onPress={onBack} /> : null;
-  if (settings.status === "loading") {
-    return <>{back}<ActivityIndicator style={{ padding: 12 }} /></>;
-  }
+  const back = onBack ? <BackToJira onPress={onBack} /> : null;
+  if (settings.status === "loading") return <ActivityIndicator style={{ padding: 12 }} />;
   if (settings.status !== "ready") {
     return (
       <>
-        {back}
         <PluginUpdate theme={theme} />
         <SettingsSection title="Jira connection">
           <Text style={{ color: theme.colors.foreground }}>{settings.error}</Text>
           <SettingsAction label="Restore default settings" actionLabel="Reset" onPress={settings.reset} />
         </SettingsSection>
+        {back}
       </>
     );
   }
   return (
     <>
-      {back}
       <PluginUpdate theme={theme} />
       <Editor settings={settings} theme={theme} />
       <BoardPicker settings={settings} theme={theme} />
+      {back}
     </>
   );
 }

@@ -41,8 +41,14 @@ function updateHosts(host: unknown): UpdateHost[] {
   return [host as UpdateHost, ...(typeof plugins === "object" && plugins !== null ? [plugins as UpdateHost] : [])];
 }
 
-async function runPaseoCli() {
-  await execute("paseo", ["plugin", "update", PLUGIN_ID], {
+type CommandRunner = (
+  command: string,
+  args: string[],
+  options: { timeout: number; maxBuffer: number; shell: boolean; windowsHide: boolean },
+) => Promise<unknown>;
+
+export async function runPaseoCli(run: CommandRunner = execute) {
+  await run("paseo", ["plugin", "update", PLUGIN_ID, "--yes"], {
     timeout: 300_000,
     maxBuffer: 1_000_000,
     shell: process.platform === "win32",
@@ -81,7 +87,7 @@ export async function updateJiraPlugin(host: unknown, runCli: () => Promise<void
     }
     return {
       status: "updated",
-      message: applied.warning ?? "Jira plugin updated. Reopen the Jira screen if Paseo does not refresh it automatically.",
+      message: applied.warning ?? "Update installed. Reload Jira if it doesn’t refresh automatically.",
     };
   }
 
@@ -91,7 +97,7 @@ export async function updateJiraPlugin(host: unknown, runCli: () => Promise<void
     const update = updates.find((item) => item.id === PLUGIN_ID);
     if (!update) throw new Error("Paseo did not return an update result for paseo-jira");
     return update.updated
-      ? { status: "updated", message: "Jira plugin updated. Reopen the Jira screen if Paseo does not refresh it automatically." }
+      ? { status: "updated", message: "Update installed. Reload Jira if it doesn’t refresh automatically." }
       : { status: "current", message: "You are already on the latest version." };
   }
 
@@ -105,7 +111,7 @@ export async function updateJiraPlugin(host: unknown, runCli: () => Promise<void
     await runCli();
     return {
       status: "completed",
-      message: "Update check completed. Reopen the Jira screen if Paseo does not refresh it automatically.",
+      message: "Update check completed. Reload Jira if needed.",
     };
   } catch (error) {
     throw new Error(`Automatic update failed. Run \`${MANUAL_COMMAND}\` on the Paseo daemon host. ${errorMessage(error)}`.trim());

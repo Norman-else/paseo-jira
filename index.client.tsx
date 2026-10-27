@@ -15,7 +15,11 @@ function JiraItem({ currentScreen, openScreen }: PluginSidebarItemProps) {
 }
 
 export default function contribute(client: PluginClientContext) {
-  client.addScreen({ id: "jira", title: "Jira", Component: JiraScreen });
+  client.addScreen({
+    id: "jira",
+    title: "Jira",
+    Component: (props) => <JiraScreen {...props} onOpenSettings={() => client.openSettings("connection")} />,
+  });
   client.addSidebarHeaderItem({ id: "jira", title: "Jira", Component: JiraItem });
   client.addSettingsScreen({ id: "connection", title: "Jira", icon: "Ticket", Component: JiraSettings });
   client.addAttachmentSource(jiraAttachments);

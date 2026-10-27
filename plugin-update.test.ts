@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { updateJiraPlugin } from "./server/plugin-update.ts";
+import { runPaseoCli, updateJiraPlugin } from "./server/plugin-update.ts";
 
 const unusedCli = async () => {
   throw new Error("CLI fallback should not be called");
@@ -102,4 +102,16 @@ test("CLI failure includes the manual update command", async () => {
   await assert.rejects(updateJiraPlugin({}, async () => {
     throw new Error("paseo is not installed");
   }), /paseo plugin update paseo-jira/);
+});
+
+test("CLI confirms reviewed updates after the user clicks Check updates", async () => {
+  let command = "";
+  let args: string[] = [];
+  await runPaseoCli(async (actualCommand, actualArgs) => {
+    command = actualCommand;
+    args = actualArgs;
+  });
+
+  assert.equal(command, "paseo");
+  assert.deepEqual(args, ["plugin", "update", "paseo-jira", "--yes"]);
 });

@@ -769,7 +769,7 @@ function sprintLabel(sp: Sprint) {
   return sp.state === "active" ? `${sp.name} · active` : sp.state === "future" ? `${sp.name} · upcoming` : sp.name;
 }
 
-export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
+export function JiraScreen({ theme, layout, navigation, onOpenSettings }: PluginScreenProps & { onOpenSettings?: () => void }) {
   const queryClient = useQueryClient();
   const styles = useStyles(theme, layout.compact);
   const list = useRpc(listTicketsRpc);
@@ -930,6 +930,16 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
             <Icon name="RefreshCw" size={16} color={c.foregroundMuted} />
           )}
         </Pressable>
+        {onOpenSettings ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open Jira settings"
+            onPress={onOpenSettings}
+            style={({ pressed }) => ({ minWidth: 28, minHeight: 28, alignItems: "center", justifyContent: "center", padding: 6, borderRadius: 6, backgroundColor: pressed ? c.surface2 : "transparent" })}
+          >
+            <Icon name="Settings" size={16} color={c.foregroundMuted} />
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.searchBox}>

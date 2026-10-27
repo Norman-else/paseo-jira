@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { ActivityIndicator, Text } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import { useRpc, useSettings, type PluginSurfaceProps, type SettingsState } from "@getpaseo/plugin/client";
 import {
+  Icon,
   SettingsAction,
   SettingsCard,
   SettingsInput,
@@ -112,9 +113,7 @@ function BoardPicker({ settings, theme }: { settings: Ready; theme: PluginSurfac
 function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
   const updatePlugin = useRpc(updatePluginRpc);
   const update = useMutation({ mutationFn: () => updatePlugin({}) });
-  const messageColor = update.data?.status === "updated" || update.data?.status === "completed"
-    ? theme.colors.statusSuccess
-    : theme.colors.foregroundMuted;
+  const isSuccess = update.data?.status === "updated" || update.data?.status === "completed";
 
   return (
     <SettingsSection title="Plugin updates">
@@ -127,7 +126,31 @@ function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
           error={update.error?.message}
           onPress={() => update.mutate()}
         />
-        {update.data ? <Text style={{ color: messageColor, paddingHorizontal: 12 }}>{update.data.message}</Text> : null}
+        {update.data ? (
+          <View
+            accessibilityLiveRegion="polite"
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginHorizontal: 12,
+              marginBottom: 12,
+              paddingHorizontal: 10,
+              paddingVertical: 9,
+              borderRadius: 8,
+              backgroundColor: theme.colors.surface2,
+            }}
+          >
+            <Icon
+              name={isSuccess ? "CircleCheck" : "Info"}
+              size={15}
+              color={isSuccess ? theme.colors.statusSuccess : theme.colors.foregroundMuted}
+            />
+            <Text style={{ flex: 1, color: theme.colors.foreground, fontSize: 13, lineHeight: 18 }}>
+              {update.data.message}
+            </Text>
+          </View>
+        ) : null}
       </SettingsCard>
     </SettingsSection>
   );

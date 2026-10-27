@@ -44,7 +44,20 @@ const SprintPageSchema = z.object({ values: z.array(JiraSprintSchema), isLast: z
 
 const SPRINT_STATE_ORDER: Record<string, number> = { active: 0, future: 1, closed: 2 };
 
-const MyselfSchema = z.object({ displayName: z.string() });
+const TransitionsSchema = z.object({
+  transitions: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      to: z.object({ name: z.string(), statusCategory: z.object({ key: z.string() }) }),
+    }),
+  ),
+});
+
+const MyselfSchema = z.object({ displayName: z.string(), accountId: z.string() });
+const UsersSchema = z.array(
+  z.object({ accountId: z.string(), displayName: z.string(), emailAddress: z.string().optional(), active: z.boolean().optional() }),
+);
 
 function describeFailure(status: number): string {
   if (status === 401 || status === 403) return "Jira rejected the email or API token";
@@ -65,8 +78,13 @@ export function createJiraClient(settings: JiraSettings) {
       ...init,
       headers: { Authorization: auth, Accept: "application/json", "Content-Type": "application/json" },
     });
-    if (!response.ok) throw new Error(describeFailure(response.status));
-    return response.json();
+    if (!response.ok) {
+      // Surface Jira's own message (e.g. a required field on the transition screen) when there is one.
+      const body = (await response.json().catch(() => null)) as { errorMessages?: string[]; errors?: Record<string, string> } | null;
+      const detail = [...(body?.errorMessages ?? []), ...Object.values(body?.errors ?? {})].join("; ");
+      throw new Error(detail || describeFailure(response.status));
+    }
+    return response.status === 204 ? null : response.json();
   }
 
   // The sprint field is a custom field whose id differs per site; discover it once.
@@ -141,6 +159,41 @@ export function createJiraClient(settings: JiraSettings) {
         if (page.isLast !== false || page.values.length === 0) break;
       }
       return { boards };
+    },
+    async transitions(key: string) {
+      const { transitions } = TransitionsSchema.parse(
+        await request(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`),
+      );
+      return {
+        transitions: transitions.map((t) => ({ id: t.id, name: t.name, to: t.to.name, toCategory: t.to.statusCategory.key })),
+      };
+    },
+    async transition(key: string, transitionId: string) {
+      await request(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`, {
+        method: "POST",
+        body: JSON.stringify({ transition: { id: transitionId } }),
+      });
+      return { ok: true as const };
+    },
+    async assignees(key: string, query: string) {
+      const params = new URLSearchParams({ issueKey: key, query, maxResults: "50" });
+      const [users, me] = await Promise.all([
+        request(`/rest/api/3/user/assignable/search?${params}`).then((u) => UsersSchema.parse(u)),
+        request("/rest/api/3/myself").then((m) => MyselfSchema.parse(m)),
+      ]);
+      return {
+        users: users
+          .filter((u) => u.active !== false)
+          .map((u) => ({ accountId: u.accountId, displayName: u.displayName, email: u.emailAddress ?? null })),
+        me: me.accountId,
+      };
+    },
+    async assign(key: string, accountId: string | null) {
+      await request(`/rest/api/3/issue/${encodeURIComponent(key)}/assignee`, {
+        method: "PUT",
+        body: JSON.stringify({ accountId }),
+      });
+      return { ok: true as const };
     },
     async myself() {
       return MyselfSchema.parse(await request("/rest/api/3/myself"));

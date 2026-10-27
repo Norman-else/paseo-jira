@@ -81,6 +81,35 @@ export const listBoardsRpc = defineRpc({
   output: z.object({ boards: z.array(z.object({ id: z.number(), name: z.string(), project: z.string().nullable() })) }),
 });
 
+export const listTransitionsRpc = defineRpc({
+  name: "jira.transitions",
+  input: z.object({ key: z.string() }),
+  output: z.object({
+    transitions: z.array(z.object({ id: z.string(), name: z.string(), to: z.string(), toCategory: z.string() })),
+  }),
+});
+
+export const transitionRpc = defineRpc({
+  name: "jira.transition",
+  input: z.object({ key: z.string(), transitionId: z.string() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const searchAssigneesRpc = defineRpc({
+  name: "jira.assignees",
+  input: z.object({ key: z.string(), query: z.string() }),
+  output: z.object({
+    users: z.array(z.object({ accountId: z.string(), displayName: z.string(), email: z.string().nullable() })),
+    me: z.string(),
+  }),
+});
+
+export const assignRpc = defineRpc({
+  name: "jira.assign",
+  input: z.object({ key: z.string(), accountId: z.string().nullable() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
 export const testConnectionRpc = defineRpc({
   name: "jira.test-connection",
   input: z.object({}),

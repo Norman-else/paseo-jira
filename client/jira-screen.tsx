@@ -19,8 +19,12 @@ import {
 import {
   defaultPrompt,
   listSprintsRpc,
+  assignRpc,
   listTicketsRpc,
+  listTransitionsRpc,
+  searchAssigneesRpc,
   remoteBranchesRpc,
+  transitionRpc,
   searchTicketsRpc,
   type Sprint,
 } from "../shared/jira";
@@ -459,6 +463,178 @@ function StartModal({
 }
 
 type ListItem = RpcOutput<typeof listTicketsRpc>["items"][number];
+
+function AssignModal({
+  item,
+  styles,
+  onClose,
+  onChanged,
+}: {
+  item: ListItem;
+  styles: Styles;
+  onClose(): void;
+  onChanged(): void;
+}) {
+  const search = useRpc(searchAssigneesRpc);
+  const assign = useRpc(assignRpc);
+  const toast = useToast();
+  const [input, setInput] = useState("");
+  const [query, setQuery] = useState("");
+  // ponytail: debounce by hand; 250ms keeps Jira's user search from firing per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(input.trim()), 250);
+    return () => clearTimeout(t);
+  }, [input]);
+  const users = useQuery({
+    queryKey: ["jira-assignees", item.key, query],
+    queryFn: () => search({ key: item.key, query }),
+    placeholderData: (prev) => prev,
+  });
+  const change = useMutation({
+    mutationFn: (u: { accountId: string | null; displayName: string }) => assign({ key: item.key, accountId: u.accountId }),
+    onSuccess: (_, u) => {
+      toast.show(`${item.key} → ${u.displayName}`, { variant: "success" });
+      onChanged();
+      onClose();
+    },
+  });
+  const me = users.data?.users.find((u) => u.accountId === users.data?.me);
+  const row = (key: string, label: string, sub: string | null, target: { accountId: string | null; displayName: string }, current: boolean) => (
+    <Pressable
+      key={key}
+      accessibilityRole="button"
+      disabled={change.isPending || current}
+      onPress={() => change.mutate(target)}
+      style={({ pressed }) => [styles.pickerRow, current && styles.rowSelected, pressed && styles.rowPressed]}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={styles.text} numberOfLines={1}>
+          {label}
+        </Text>
+        {sub ? (
+          <Text style={[styles.muted, { fontSize: 12 }]} numberOfLines={1}>
+            {sub}
+          </Text>
+        ) : null}
+      </View>
+      {change.isPending && change.variables?.accountId === target.accountId ? (
+        <ActivityIndicator size="small" color={styles.muted.color} />
+      ) : null}
+      {current ? <Icon name="Check" size={16} color={styles.accent.color} /> : null}
+    </Pressable>
+  );
+
+  return (
+    <Modal title={`Assign · ${item.key}`} open onOpenChange={(open) => !open && onClose()}>
+      <Modal.Content>
+        <View style={{ gap: 12, height: 440 }}>
+          <View style={styles.searchBox}>
+            <Icon name="Search" size={16} color={styles.muted.color} />
+            <RNTextInput
+              style={styles.bareInput}
+              value={input}
+              onChangeText={setInput}
+              placeholder="Search people"
+              placeholderTextColor={styles.muted.color}
+              autoFocus
+              accessibilityLabel="Search people"
+            />
+            {users.isFetching ? <ActivityIndicator size="small" color={styles.muted.color} /> : null}
+          </View>
+          {change.error ? <Text style={styles.error}>{change.error.message}</Text> : null}
+          {users.error ? <Text style={styles.error}>{users.error.message}</Text> : null}
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }}>
+            {!query && me
+              ? row("me", "Assign to me", me.displayName, me, item.assignee === me.displayName)
+              : null}
+            {!query
+              ? row("none", "Unassigned", null, { accountId: null, displayName: "Unassigned" }, item.assignee === null)
+              : null}
+            {(users.data?.users ?? [])
+              .filter((u) => query || u.accountId !== users.data?.me)
+              .map((u) => row(u.accountId, u.displayName, u.email, u, item.assignee === u.displayName))}
+            {users.data && users.data.users.length === 0 ? (
+              <Text style={[styles.muted, { textAlign: "center", padding: 24 }]}>No people match “{query}”</Text>
+            ) : null}
+          </ScrollView>
+        </View>
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+function StatusModal({
+  item,
+  styles,
+  tone,
+  onClose,
+  onChanged,
+}: {
+  item: ListItem;
+  styles: Styles;
+  tone: Record<string, string>;
+  onClose(): void;
+  onChanged(): void;
+}) {
+  const listTransitions = useRpc(listTransitionsRpc);
+  const transition = useRpc(transitionRpc);
+  const toast = useToast();
+  const transitions = useQuery({
+    queryKey: ["jira-transitions", item.key],
+    queryFn: () => listTransitions({ key: item.key }),
+    staleTime: 0,
+  });
+  const change = useMutation({
+    mutationFn: (t: { id: string; to: string }) => transition({ key: item.key, transitionId: t.id }),
+    onSuccess: (_, t) => {
+      toast.show(`${item.key} → ${t.to}`, { variant: "success" });
+      onChanged();
+      onClose();
+    },
+  });
+
+  return (
+    <Modal title={`Change status · ${item.key}`} open onOpenChange={(open) => !open && onClose()}>
+      <Modal.Content>
+        <Text style={[styles.text, { fontSize: 15, fontWeight: "500" }]} numberOfLines={2}>
+          {item.title}
+        </Text>
+        <Text style={styles.fieldLabel}>Current: {item.status}</Text>
+        {transitions.isPending ? (
+          <Spinner color={styles.muted.color} />
+        ) : transitions.error ? (
+          <Text style={styles.error}>{transitions.error.message}</Text>
+        ) : transitions.data.transitions.length === 0 ? (
+          <Text style={styles.muted}>No transitions available for this ticket.</Text>
+        ) : (
+          <View style={{ gap: 2 }}>
+            {transitions.data.transitions.map((t) => {
+              const current = t.to === item.status;
+              const pending = change.isPending && change.variables?.id === t.id;
+              return (
+                <Pressable
+                  key={t.id}
+                  accessibilityRole="button"
+                  disabled={change.isPending || current}
+                  onPress={() => change.mutate(t)}
+                  style={({ pressed }) => [styles.pickerRow, current && styles.rowSelected, pressed && styles.rowPressed]}
+                >
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tone[t.toCategory] ?? styles.muted.color }} />
+                  <Text style={[styles.text, { flex: 1 }]} numberOfLines={1}>
+                    {t.name === t.to ? t.to : `${t.name} → ${t.to}`}
+                  </Text>
+                  {pending ? <ActivityIndicator size="small" color={styles.muted.color} /> : null}
+                  {current ? <Icon name="Check" size={16} color={styles.accent.color} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+        {change.error ? <Text style={styles.error}>{change.error.message}</Text> : null}
+      </Modal.Content>
+    </Modal>
+  );
+}
 type Row = { type: "header"; key: string; title: string; count: number } | { type: "ticket"; key: string; item: ListItem };
 
 const ALL_ACTIVE = "active";
@@ -478,6 +654,8 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
   const [showDone, setShowDone] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selected, setSelected] = useState<Ticket | null>(null);
+  const [transitioning, setTransitioning] = useState<ListItem | null>(null);
+  const [assigning, setAssigning] = useState<ListItem | null>(null);
   const sprintId = sprint === ALL_ACTIVE ? null : Number(sprint);
   const tickets = useQuery({
     queryKey: ["jira-list", query, sprintId, mine, showDone],
@@ -680,11 +858,34 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <Text style={[styles.muted, { fontSize: 12, fontWeight: "600", fontFamily: "monospace" }]}>{item.key}</Text>
                     {item.status ? (
-                      <View style={{ backgroundColor: c.surface2, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Change status of ${item.key}`}
+                        onPress={() => setTransitioning(item)}
+                        style={({ pressed }) => ({
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 4,
+                          backgroundColor: c.surface2,
+                          borderRadius: 999,
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          opacity: pressed ? 0.7 : 1,
+                        })}
+                      >
                         <Text style={{ color: statusColor, fontSize: 11, fontWeight: "600" }}>{item.status}</Text>
-                      </View>
+                        <Icon name="ChevronDown" size={11} color={statusColor} />
+                      </Pressable>
                     ) : null}
-                    {item.assignee ? <Text style={[styles.muted, { fontSize: 12 }]}>· {item.assignee}</Text> : null}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Change assignee of ${item.key}`}
+                      onPress={() => setAssigning(item)}
+                      style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 4, opacity: pressed ? 0.7 : 1 })}
+                    >
+                      <Icon name="UserRound" size={12} color={c.foregroundMuted} />
+                      <Text style={[styles.muted, { fontSize: 12 }]}>{item.assignee ?? "Unassigned"}</Text>
+                    </Pressable>
                   </View>
                   <Text style={[styles.text, { fontSize: 14 }]} numberOfLines={2}>
                     {item.title}
@@ -704,6 +905,25 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
           }}
         />
       )}
+      {assigning ? (
+        <AssignModal
+          key={assigning.id}
+          item={assigning}
+          styles={styles}
+          onClose={() => setAssigning(null)}
+          onChanged={() => void tickets.refetch()}
+        />
+      ) : null}
+      {transitioning ? (
+        <StatusModal
+          key={transitioning.id}
+          item={transitioning}
+          styles={styles}
+          tone={tone}
+          onClose={() => setTransitioning(null)}
+          onChanged={() => void tickets.refetch()}
+        />
+      ) : null}
       {selected ? (
         <StartModal
           key={selected.id}

@@ -988,7 +988,6 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
             return (
               <View style={[styles.ticketCard, expanded && { borderColor: c.accent }]}>
                 <View style={{ flexDirection: layout.compact ? "column" : "row", alignItems: layout.compact ? "stretch" : "center" }}>
-                  <View style={{ position: "absolute", top: 16, bottom: 16, left: 0, width: 3, backgroundColor: statusColor }} />
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`${expanded ? "Hide" : "Show"} details for ${item.key}: ${item.title}`}

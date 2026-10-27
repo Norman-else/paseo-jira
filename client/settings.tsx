@@ -11,6 +11,7 @@ import {
   SettingsSwitch,
 } from "@getpaseo/plugin/client/ui";
 import { jiraSettings, listBoardsRpc, testConnectionRpc, updatePluginRpc } from "../shared/jira";
+import { pluginRestartResult } from "../shared/plugin-update";
 
 type Ready = Extract<SettingsState<typeof jiraSettings.schema>, { status: "ready" }>;
 
@@ -113,7 +114,17 @@ function BoardPicker({ settings, theme }: { settings: Ready; theme: PluginSurfac
 function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
   const updatePlugin = useRpc(updatePluginRpc);
   const [resultVisible, setResultVisible] = useState(false);
-  const update = useMutation({ mutationFn: () => updatePlugin({}) });
+  const update = useMutation({
+    mutationFn: async () => {
+      try {
+        return await updatePlugin({});
+      } catch (error) {
+        const restarted = pluginRestartResult(error);
+        if (restarted) return restarted;
+        throw error;
+      }
+    },
+  });
   const isSuccess = update.data?.status === "updated" || update.data?.status === "completed";
 
   useEffect(() => {

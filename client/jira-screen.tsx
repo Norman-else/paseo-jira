@@ -1,7 +1,7 @@
 import type { RpcOutput } from "@getpaseo/plugin";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ActivityIndicator, Pressable, Switch, TextInput as RNTextInput, Text, View } from "react-native";
 import {
   openExternalUrl,
   usePaseo,
@@ -11,11 +11,8 @@ import {
 import {
   FlatList,
   Icon,
-  SettingsRow,
   ScrollView,
   Modal,
-  SettingsSelect,
-  SettingsSwitch,
   TextInput,
   useToast,
 } from "@getpaseo/plugin/client/ui";
@@ -116,6 +113,41 @@ function useStyles(theme: Theme, compact: boolean) {
         paddingBottom: 4,
       },
       menuItem: { paddingHorizontal: 8, paddingVertical: 7, borderRadius: 6 },
+      fieldLabel: { color: theme.colors.foregroundMuted, fontSize: 12, fontWeight: "500" as const },
+      fieldBorder: { borderColor: theme.colors.border },
+      field: {
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        gap: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 12,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface1,
+      },
+      // outlineStyle removes the browser focus ring on web; the surrounding box is the visual field.
+      bareInput: { flex: 1, color: theme.colors.foreground, paddingVertical: 10, fontSize: 14, outlineStyle: "none" as never },
+      pickerBack: {
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        gap: 8,
+        alignSelf: "flex-start" as const,
+        paddingVertical: 4,
+        paddingHorizontal: 6,
+        marginLeft: -6,
+        borderRadius: 6,
+      },
+      pickerRow: {
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        gap: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 8,
+      },
+      rowSelected: { backgroundColor: theme.colors.surface2 },
+      rowPressed: { backgroundColor: theme.colors.surface2, opacity: 0.85 },
       selectTrigger: {
         flexDirection: "row" as const,
         alignItems: "center" as const,
@@ -139,22 +171,35 @@ type Styles = ReturnType<typeof useStyles>;
 type PickerOption = { value: string; group: string; label: string };
 type Picking = { label: string; options: PickerOption[]; value: string; onChange(value: string): void };
 
+function Field({ label, styles, children }: { label: string; styles: Styles; children: ReactNode }) {
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
 function PickerTrigger({ picking, onOpen, styles }: { picking: Picking; onOpen(p: Picking): void; styles: Styles }) {
   const current = picking.options.find((o) => o.value === picking.value);
   return (
-    <SettingsRow label={picking.label}>
+    <Field label={picking.label} styles={styles}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Choose ${picking.label}`}
-        style={styles.selectTrigger}
+        style={styles.field}
         onPress={() => onOpen(picking)}
       >
-        <Text style={styles.text} numberOfLines={1}>
-          {current ? `${current.group} · ${current.label}` : `Choose ${picking.label.toLowerCase()}`}
+        <Text style={[styles.text, { flex: 1 }]} numberOfLines={1}>
+          {current
+            ? current.group
+              ? `${current.group} · ${current.label}`
+              : current.label
+            : `Choose ${picking.label.toLowerCase()}`}
         </Text>
-        <Icon name="ChevronDown" size={14} color={styles.muted.color} />
+        <Icon name="ChevronRight" size={16} color={styles.muted.color} />
       </Pressable>
-    </SettingsRow>
+    </Field>
   );
 }
 
@@ -169,39 +214,63 @@ function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): v
     groups.set(o.group, [...(groups.get(o.group) ?? []), o]);
   }
   return (
-    <View style={{ gap: 12 }}>
-      <Pressable accessibilityRole="button" onPress={onDone} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-        <Icon name="ChevronLeft" size={16} color={styles.text.color} />
-        <Text style={styles.text}>{picking.label}</Text>
+    // Fixed height so the dialog doesn't jump in size as the filter narrows the list.
+    <View style={{ gap: 12, height: 480 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+        onPress={onDone}
+        style={({ pressed }) => [styles.pickerBack, pressed && styles.rowPressed]}
+      >
+        <Icon name="ArrowLeft" size={16} color={styles.text.color} />
+        <Text style={[styles.text, { fontSize: 15, fontWeight: "600" }]}>{picking.label}</Text>
       </Pressable>
-      <TextInput
-        style={styles.input}
-        value={filter}
-        onChangeText={setFilter}
-        placeholder="Search"
-        autoFocus
-        accessibilityLabel={`Search ${picking.label}`}
-      />
-      <ScrollView style={{ maxHeight: 420 }}>
+      <View style={styles.searchBox}>
+        <Icon name="Search" size={16} color={styles.muted.color} />
+        <RNTextInput
+          style={styles.bareInput}
+          value={filter}
+          onChangeText={setFilter}
+          placeholder={`Search ${picking.label.toLowerCase()}`}
+          placeholderTextColor={styles.muted.color}
+          autoFocus
+          accessibilityLabel={`Search ${picking.label}`}
+        />
+        {filter ? (
+          <Pressable accessibilityLabel="Clear search" onPress={() => setFilter("")}>
+            <Icon name="X" size={14} color={styles.muted.color} />
+          </Pressable>
+        ) : null}
+      </View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }}>
         {[...groups].map(([group, items]) => (
-          <View key={group}>
-            <Text style={[styles.muted, { marginTop: 8, fontSize: 12, textTransform: "uppercase" }]}>{group}</Text>
-            {items.map((o) => (
-              <Pressable
-                key={o.value}
-                accessibilityRole="button"
-                style={{ paddingVertical: 8, paddingLeft: 8 }}
-                onPress={() => {
-                  picking.onChange(o.value);
-                  onDone();
-                }}
-              >
-                <Text style={o.value === picking.value ? styles.accent : styles.text}>{o.label}</Text>
-              </Pressable>
-            ))}
+          <View key={group} style={{ gap: 2 }}>
+            {group ? <Text style={styles.menuGroup}>{group}</Text> : null}
+            {items.map((o) => {
+              const selected = o.value === picking.value;
+              return (
+                <Pressable
+                  key={o.value}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  style={({ pressed }) => [styles.pickerRow, selected && styles.rowSelected, pressed && styles.rowPressed]}
+                  onPress={() => {
+                    picking.onChange(o.value);
+                    onDone();
+                  }}
+                >
+                  <Text style={[styles.text, { flex: 1 }, selected && { fontWeight: "600" }]} numberOfLines={1}>
+                    {o.label}
+                  </Text>
+                  {selected ? <Icon name="Check" size={16} color={styles.accent.color} /> : null}
+                </Pressable>
+              );
+            })}
           </View>
         ))}
-        {groups.size === 0 ? <Text style={styles.muted}>No matches.</Text> : null}
+        {groups.size === 0 ? (
+          <Text style={[styles.muted, { textAlign: "center", padding: 24 }]}>No matches for “{filter}”</Text>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -212,7 +281,9 @@ function StartModal({
   onClose,
   styles,
   navigation,
+  compact,
 }: {
+  compact: boolean;
   ticket: Ticket;
   onClose(): void;
   styles: Styles;
@@ -298,7 +369,7 @@ function StartModal({
     },
   });
 
-  const options = (workspaces.data ?? []).map((p) => ({ label: p.name, value: p.id }));
+  const options = (workspaces.data ?? []).map((p) => ({ label: p.name, value: p.id, group: "" }));
 
   return (
     <Modal title={`Start ${ticket.identifier}`} open onOpenChange={(open) => !open && onClose()}>
@@ -307,20 +378,26 @@ function StartModal({
           <PickerView picking={picking} onDone={() => setPicking(null)} styles={styles} />
         ) : (
         <>
-        <Text style={styles.muted}>{ticket.title}</Text>
-        <TextInput
-          style={[styles.input, { minHeight: 96, textAlignVertical: "top" }]}
-          multiline
-          value={prompt}
-          onChangeText={setPrompt}
-          accessibilityLabel="Prompt"
-        />
+        <Text style={[styles.text, { fontSize: 15, fontWeight: "500" }]}>{ticket.title}</Text>
+        <Field label="Prompt" styles={styles}>
+          <TextInput
+            style={[styles.input, { minHeight: 88, textAlignVertical: "top", padding: 12, borderRadius: 8 }]}
+            multiline
+            value={prompt}
+            onChangeText={setPrompt}
+            accessibilityLabel="Prompt"
+          />
+        </Field>
         {workspaces.isPending ? (
           <Spinner color={styles.muted.color} />
         ) : workspaces.error ? (
           <Text style={styles.error}>{workspaces.error.message}</Text>
         ) : (
-          <SettingsSelect label="Project" value={workspaceId} options={options} onValueChange={setWorkspaceId} />
+          <PickerTrigger
+            picking={{ label: "Project", options, value: workspaceId, onChange: setWorkspaceId }}
+            onOpen={setPicking}
+            styles={styles}
+          />
         )}
         {models.error ? (
           <Text style={styles.error}>{models.error.message}</Text>
@@ -333,12 +410,18 @@ function StartModal({
         ) : (
           <Spinner color={styles.muted.color} />
         )}
-        <SettingsSwitch
-          label="Use worktree"
-          hint={`New worktree on branch ${ticket.identifier}, based on the remote branch below (fetched first)`}
-          value={useWorktree}
-          onValueChange={setUseWorktree}
-        />
+        <View style={[styles.field, { paddingVertical: 10 }]}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.text}>Use worktree</Text>
+            <Text style={[styles.muted, { fontSize: 12 }]}>New branch {ticket.identifier} from a remote branch</Text>
+          </View>
+          <Switch
+            value={useWorktree}
+            onValueChange={setUseWorktree}
+            trackColor={{ true: styles.accent.color, false: styles.fieldBorder.borderColor }}
+            accessibilityLabel="Use worktree"
+          />
+        </View>
         {!useWorktree ? null : branches.error ? (
           <Text style={styles.error}>{branches.error.message}</Text>
         ) : branches.data ? (
@@ -358,11 +441,15 @@ function StartModal({
         {start.error ? <Text style={styles.error}>{start.error.message}</Text> : null}
         <Pressable
           accessibilityRole="button"
-          style={[styles.button, { alignSelf: "flex-end" as const, opacity: start.isPending ? 0.6 : 1 }]}
+          style={[
+            styles.button,
+            { alignItems: "center", paddingVertical: 10, marginTop: 4, opacity: start.isPending ? 0.6 : 1 },
+            compact ? null : { alignSelf: "flex-end", paddingHorizontal: 24 },
+          ]}
           disabled={start.isPending || !model || (useWorktree && !baseBranch) || !workspaceId || !prompt.trim()}
           onPress={() => start.mutate()}
         >
-          <Text style={styles.buttonText}>{start.isPending ? "Starting…" : "Start"}</Text>
+          <Text style={[styles.buttonText, { fontWeight: "600" }]}>{start.isPending ? "Starting…" : "Start"}</Text>
         </Pressable>
         </>
         )}
@@ -430,9 +517,18 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
 
   return (
     <View style={styles.screen}>
+      {menuOpen ? (
+        // Click-away layer under the header (zIndex 10) and its menu, over the rest of the screen.
+        <Pressable
+          accessibilityLabel="Close sprint menu"
+          onPress={() => setMenuOpen(false)}
+          style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 5 }}
+        />
+      ) : null}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12, zIndex: 10 }}>
-        <Text style={[styles.text, { fontSize: 20, fontWeight: "600" }]}>Jira</Text>
-        <View>
+        {/* Phones already show "Jira" in the screen header. */}
+        {layout.compact ? null : <Text style={[styles.text, { fontSize: 20, fontWeight: "600" }]}>Jira</Text>}
+        <View style={{ flexShrink: 1, minWidth: 0 }}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Choose sprint"
@@ -440,7 +536,7 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
             onPress={() => setMenuOpen((o) => !o)}
           >
             <Icon name="Zap" size={14} color={c.foregroundMuted} />
-            <Text style={styles.text} numberOfLines={1}>
+            <Text style={[styles.text, { flexShrink: 1 }]} numberOfLines={1}>
               {current ? sprintLabel(current) : "All active sprints"}
             </Text>
             <Icon name={menuOpen ? "ChevronUp" : "ChevronDown"} size={14} color={c.foregroundMuted} />
@@ -480,15 +576,18 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
             </View>
           ) : null}
         </View>
-        <View style={{ flex: 1 }} />
+        <View style={{ flexGrow: 1 }} />
         <Pressable
           accessibilityRole="switch"
+          accessibilityLabel="Only mine"
           accessibilityState={{ checked: mine }}
           onPress={() => setMine((m) => !m)}
           style={[styles.chip, mine && { borderColor: c.accent }]}
         >
           <Icon name="User" size={13} color={mine ? c.accent : c.foregroundMuted} />
-          <Text style={{ color: mine ? c.accent : c.foregroundMuted, fontSize: 13 }}>Only mine</Text>
+          {layout.compact ? null : (
+            <Text style={{ color: mine ? c.accent : c.foregroundMuted, fontSize: 13 }}>Only mine</Text>
+          )}
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -510,8 +609,8 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
 
       <View style={styles.searchBox}>
         <Icon name="Search" size={16} color={c.foregroundMuted} />
-        <TextInput
-          style={{ flex: 1, color: c.foreground, paddingVertical: 8 }}
+        <RNTextInput
+          style={styles.bareInput}
           value={input}
           onChangeText={setInput}
           onSubmitEditing={() => setQuery(input.trim())}
@@ -599,6 +698,7 @@ export function JiraScreen({ theme, layout, navigation }: PluginScreenProps) {
           onClose={() => setSelected(null)}
           styles={styles}
           navigation={navigation}
+          compact={layout.compact}
         />
       ) : null}
     </View>

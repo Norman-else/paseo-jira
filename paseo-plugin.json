@@ -1,0 +1,8 @@
+{
+  "id": "paseo-jira",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.13.2"
+  },
+  "name": "Jira"
+}

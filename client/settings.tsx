@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { useRpc, useSettings, type PluginSurfaceProps, type SettingsState } from "@getpaseo/plugin/client";
 import {
@@ -112,8 +112,19 @@ function BoardPicker({ settings, theme }: { settings: Ready; theme: PluginSurfac
 
 function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
   const updatePlugin = useRpc(updatePluginRpc);
+  const [resultVisible, setResultVisible] = useState(false);
   const update = useMutation({ mutationFn: () => updatePlugin({}) });
   const isSuccess = update.data?.status === "updated" || update.data?.status === "completed";
+
+  useEffect(() => {
+    if (update.isPending || !update.data) {
+      setResultVisible(false);
+      return;
+    }
+    setResultVisible(true);
+    const timeout = setTimeout(() => setResultVisible(false), 5000);
+    return () => clearTimeout(timeout);
+  }, [update.data, update.isPending]);
 
   return (
     <SettingsSection title="Plugin updates">
@@ -126,7 +137,7 @@ function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
           error={update.error?.message}
           onPress={() => update.mutate()}
         />
-        {update.data ? (
+        {resultVisible && update.data ? (
           <View
             accessibilityLiveRegion="polite"
             style={{
@@ -134,6 +145,7 @@ function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
               alignItems: "center",
               gap: 8,
               marginHorizontal: 12,
+              marginTop: 12,
               marginBottom: 12,
               paddingHorizontal: 10,
               paddingVertical: 9,

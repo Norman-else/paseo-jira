@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { defaultPrompt, jiraSettings } from "../shared/jira";
+import { defaultPrompt, defaultSprints, jiraSettings } from "../shared/jira";
 import { buildJql, buildListJql } from "./jql";
-import { descriptionToText } from "./description";
+import { descriptionToMarkdown } from "./description-markdown";
 
 type JiraSettings = z.output<typeof jiraSettings.schema>;
 
@@ -127,7 +127,7 @@ export function createJiraClient(settings: JiraSettings) {
       const field = await findSprintField();
       let sprintIds: number[] | null = input.sprintId === null ? null : [input.sprintId];
       if (sprintIds === null && settings.boardIds.length > 0) {
-        sprintIds = (await this.sprints()).sprints.filter((sp) => sp.state === "active").map((sp) => sp.id);
+        sprintIds = defaultSprints((await this.sprints()).sprints).map((sp) => sp.id);
         if (sprintIds.length === 0) return { items: [] };
       }
       const body = {
@@ -200,7 +200,7 @@ export function createJiraClient(settings: JiraSettings) {
         key: issue.key,
         title: issue.fields.summary,
         url: `${baseUrl}/browse/${issue.key}`,
-        description: descriptionToText(issue.fields.description),
+        description: descriptionToMarkdown(issue.fields.description),
         type: issue.fields.issuetype?.name ?? "",
         priority: issue.fields.priority?.name ?? "",
         status: issue.fields.status?.name ?? "",

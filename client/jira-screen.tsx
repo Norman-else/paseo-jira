@@ -13,11 +13,13 @@ import {
   Icon,
   ScrollView,
   Modal,
+  Markdown,
   TextInput,
   useToast,
 } from "@getpaseo/plugin/client/ui";
 import {
-  defaultPrompt,
+  startPrompt,
+  defaultSprints,
   listSprintsRpc,
   assignRpc,
   listTicketsRpc,
@@ -79,6 +81,21 @@ function useStyles(theme: Theme, compact: boolean) {
         borderColor: theme.colors.border,
         backgroundColor: theme.colors.surface1,
         overflow: "hidden" as const,
+      },
+      // To the left of the button, inside its own card: list cells stack, so anything above/below gets covered.
+      tooltip: {
+        position: "absolute" as const,
+        right: "100%" as const,
+        top: -4,
+        marginRight: 8,
+        width: 240,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface2,
+        zIndex: 20,
       },
       startButton: {
         flexDirection: "row" as const,
@@ -289,6 +306,24 @@ function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): v
   );
 }
 
+function ticketAttachment(ticket: Ticket) {
+  return {
+    type: "text" as const,
+    mimeType: "text/plain" as const,
+    title: `${ticket.identifier} ${ticket.title}`,
+    text: `Jira ticket ${ticket.identifier}: ${ticket.title}\n${ticket.url}`,
+    externalResource: {
+      provider: "paseo-jira",
+      providerLabel: "Jira ticket",
+      resourceType: "issue",
+      id: ticket.id,
+      identifier: ticket.identifier,
+      title: ticket.title,
+      url: ticket.url,
+    },
+  };
+}
+
 function StartModal({
   ticket,
   onClose,
@@ -305,7 +340,7 @@ function StartModal({
   const paseo = usePaseo();
   const listBranches = useRpc(remoteBranchesRpc);
   const toast = useToast();
-  const [prompt, setPrompt] = useState(() => defaultPrompt(ticket.identifier, ticket.url));
+  const [prompt, setPrompt] = useState(() => startPrompt(ticket.identifier));
   const [picking, setPicking] = useState<Picking | null>(null);
   const [workspaceId, setWorkspaceId] = useState("");
   const [useWorktree, setUseWorktree] = useState(false);
@@ -354,6 +389,8 @@ function StartModal({
 
   const start = useMutation({
     mutationFn: async () => {
+      // Same shape Paseo builds for a composer plugin attachment, so the message shows the ticket as a card.
+      const attachments = [ticketAttachment(ticket)];
       const project = workspaces.data?.find((p) => p.id === workspaceId);
       if (!project) throw new Error("Choose a project");
       const cwd = project.root;
@@ -362,7 +399,7 @@ function StartModal({
       if (!useWorktree) {
         // Opens (or reuses) the workspace rooted at the repo directory itself.
         const workspace = await paseo.workspaces.open(cwd);
-        const agent = await workspace.agents.create({ config, prompt, title: ticket.identifier });
+        const agent = await workspace.agents.create({ config, prompt, attachments, title: ticket.identifier });
         return { agentId: agent.id, workspaceId: workspace.id };
       }
       if (!baseBranch) throw new Error("Choose a base branch");
@@ -370,7 +407,7 @@ function StartModal({
       const created = await paseo.workspaces.create({
         source: { kind: "worktree", cwd, action: "branch-off", refName, branchName: ticket.identifier },
         title: `${ticket.identifier} ${ticket.title}`,
-        agent: { cwd, config, prompt, title: ticket.identifier },
+        agent: { cwd, config, prompt, attachments, title: ticket.identifier },
       });
       return { workspaceId: created.id };
     },
@@ -585,6 +622,8 @@ function StatusModal({
   onClose(): void;
   onChanged(): void;
 }) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const listTransitions = useRpc(listTransitionsRpc);
   const transition = useRpc(transitionRpc);
   const toast = useToast();
@@ -620,16 +659,21 @@ function StatusModal({
             {transitions.data.transitions.map((t) => {
               const current = t.to === item.status;
               const pending = change.isPending && change.variables?.id === t.id;
+              const highlighted = !current && !change.isPending && (hoveredId === t.id || focusedId === t.id);
               return (
                 <Pressable
                   key={t.id}
                   accessibilityRole="button"
                   disabled={change.isPending || current}
+                  onHoverIn={() => setHoveredId(t.id)}
+                  onHoverOut={() => setHoveredId(null)}
+                  onFocus={() => setFocusedId(t.id)}
+                  onBlur={() => setFocusedId(null)}
                   onPress={() => change.mutate(t)}
-                  style={({ pressed }) => [styles.pickerRow, current && styles.rowSelected, pressed && styles.rowPressed]}
+                  style={({ pressed }) => [styles.pickerRow, (current || highlighted) && styles.rowSelected, pressed && styles.rowPressed]}
                 >
                   <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tone[t.toCategory] ?? styles.muted.color }} />
-                  <Text style={[styles.text, { flex: 1 }]} numberOfLines={1}>
+                  <Text style={[styles.text, { flex: 1 }, highlighted && { color: styles.accent.color }]} numberOfLines={1}>
                     {t.name === t.to ? t.to : `${t.name} → ${t.to}`}
                   </Text>
                   {pending ? <ActivityIndicator size="small" color={styles.muted.color} /> : null}
@@ -724,9 +768,9 @@ function TicketDetails({ item, styles, compact }: { item: ListItem; styles: Styl
         <>
           <View style={{ gap: 8 }}>
             <Text style={[styles.muted, { fontSize: 11, fontWeight: "600", textTransform: "uppercase" }]}>Description</Text>
-            <Text style={[styles.text, { fontSize: 14, lineHeight: 22 }]}>
+            <Markdown>
               {ticket.description || "No description provided."}
-            </Text>
+            </Markdown>
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 18 }}>
             <DetailField label="Type" value={ticket.type} styles={styles} compact={compact} />
@@ -739,20 +783,16 @@ function TicketDetails({ item, styles, compact }: { item: ListItem; styles: Styl
           {([
             ["Labels", ticket.labels],
             ["Components", ticket.components],
-          ] as const).map(([label, values]) => (
+          ] as const).filter(([, values]) => values.length > 0).map(([label, values]) => (
             <View key={label} style={{ gap: 8 }}>
               <Text style={[styles.muted, { fontSize: 11, fontWeight: "600", textTransform: "uppercase" }]}>{label}</Text>
-              {values.length ? (
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                  {values.map((value) => (
-                    <View key={value} style={[styles.chip, { maxWidth: "100%", minWidth: 0, paddingVertical: 3, backgroundColor: styles.rowSelected.backgroundColor }]}>
-                      <Text style={[styles.muted, { flexShrink: 1, fontSize: 12 }]}>{value}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={[styles.muted, { fontSize: 13 }]}>None</Text>
-              )}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {values.map((value) => (
+                  <View key={value} style={[styles.chip, { maxWidth: "100%", minWidth: 0, paddingVertical: 3, backgroundColor: styles.rowSelected.backgroundColor }]}>
+                    <Text style={[styles.muted, { flexShrink: 1, fontSize: 12 }]}>{value}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           ))}
         </>
@@ -767,6 +807,41 @@ const ALL_ACTIVE = "active";
 
 function sprintLabel(sp: Sprint) {
   return sp.state === "active" ? `${sp.name} · active` : sp.state === "future" ? `${sp.name} · upcoming` : sp.name;
+}
+
+/** Start is only enabled for "To Do"-category tickets; otherwise hover (or tap on touch) explains why. */
+function StartButton({ item, styles, onStart }: { item: ListItem; styles: Styles; onStart(): void }) {
+  const [hovered, setHovered] = useState(false);
+  const toast = useToast();
+  const startable = item.statusCategory === "new";
+  const reason = `Only To Do tickets can be started. ${item.key} is “${item.status}”.`;
+  const color = startable ? styles.accent.color : styles.muted.color;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={startable ? `Start ${item.key}` : reason}
+      accessibilityState={{ disabled: !startable }}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPress={() => (startable ? onStart() : toast.show(reason))}
+      style={({ pressed }) => [
+        styles.startButton,
+        { minHeight: 32, opacity: startable && pressed ? 0.7 : 1 },
+        !startable && { borderColor: styles.fieldBorder.borderColor },
+      ]}
+    >
+      {/* Dim the content, not the Pressable, so the tooltip stays fully opaque. */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, opacity: startable ? 1 : 0.4 }}>
+        <Icon name="Play" size={12} color={color} />
+        <Text style={{ color, fontWeight: "600", fontSize: 13 }}>Start</Text>
+      </View>
+      {hovered && !startable ? (
+        <View pointerEvents="none" style={styles.tooltip}>
+          <Text style={{ color: styles.text.color, fontSize: 12 }}>{reason}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
 }
 
 export function JiraScreen({ theme, layout, navigation, onOpenSettings }: PluginScreenProps & { onOpenSettings?: () => void }) {
@@ -807,8 +882,10 @@ export function JiraScreen({ theme, layout, navigation, onOpenSettings }: Plugin
     ]);
   }, [tickets.data]);
 
-  const active = sprints.data?.sprints.filter((sp) => sp.state === "active") ?? [];
-  // With a single active sprint, "all active" *is* that sprint: show it as such instead of a separate option.
+  // The default view: active sprints, or the next upcoming one(s) when nothing is active (mirrors the daemon).
+  const active = defaultSprints(sprints.data?.sprints ?? []);
+  const noneActive = active.length > 0 && active[0].state !== "active";
+  // With a single default sprint, "all active" *is* that sprint: show it as such instead of a separate option.
   const soleActive = active.length === 1 ? active[0] : undefined;
   const current =
     sprints.data?.sprints.find((sp) => String(sp.id) === sprint) ?? (sprint === ALL_ACTIVE ? soleActive : undefined);
@@ -849,7 +926,7 @@ export function JiraScreen({ theme, layout, navigation, onOpenSettings }: Plugin
           >
             <Icon name="Zap" size={14} color={c.foregroundMuted} />
             <Text style={[styles.text, { flexShrink: 1 }]} numberOfLines={1}>
-              {current ? sprintLabel(current) : "All active sprints"}
+              {current ? sprintLabel(current) : noneActive ? "Next upcoming sprints" : "All active sprints"}
             </Text>
             <Icon name={menuOpen ? "ChevronUp" : "ChevronDown"} size={14} color={c.foregroundMuted} />
           </Pressable>
@@ -859,7 +936,8 @@ export function JiraScreen({ theme, layout, navigation, onOpenSettings }: Plugin
                 {soleActive ? null : (
                   <Pressable style={styles.menuItem} onPress={() => choose(ALL_ACTIVE)}>
                     <Text style={sprint === ALL_ACTIVE ? styles.accent : styles.text}>
-                      All active sprints{active.length ? ` (${active.length})` : ""}
+                      {noneActive ? "Next upcoming sprints" : "All active sprints"}
+                      {active.length ? ` (${active.length})` : ""}
                     </Text>
                   </Pressable>
                 )}
@@ -1071,15 +1149,13 @@ export function JiraScreen({ theme, layout, navigation, onOpenSettings }: Plugin
                       <Icon name="UserRound" size={13} color={c.foregroundMuted} />
                       <Text style={[styles.muted, { fontSize: 12, flexShrink: 1 }]} numberOfLines={1}>{item.assignee ?? "Unassigned"}</Text>
                     </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Start ${item.key}`}
-                      style={({ pressed }) => [styles.startButton, { minHeight: 32, opacity: pressed ? 0.7 : 1 }]}
-                      onPress={() => setSelected({ id: item.id, identifier: item.key, title: item.title, url: item.url, text: "", resourceType: "issue" })}
-                    >
-                      <Icon name="Play" size={12} color={c.accent} />
-                      <Text style={{ color: c.accent, fontWeight: "600", fontSize: 13 }}>Start</Text>
-                    </Pressable>
+                    <StartButton
+                      item={item}
+                      styles={styles}
+                      onStart={() =>
+                        setSelected({ id: item.id, identifier: item.key, title: item.title, url: item.url, text: "", resourceType: "issue" })
+                      }
+                    />
                   </View>
                 </View>
                 {expanded ? <TicketDetails item={item} styles={styles} compact={layout.compact} /> : null}

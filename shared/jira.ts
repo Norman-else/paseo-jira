@@ -161,6 +161,20 @@ export const jiraAttachments = defineAttachmentSource({
   search: searchTicketsRpc,
 });
 
+/** Start modal prompt: the ticket itself (link, title) travels as the attached card. */
+export function startPrompt(key: string): string {
+  return `Implement the attached Jira ticket ${key}. Use branch name ${key}.`;
+}
+
 export function defaultPrompt(key: string, url: string): string {
   return `Implement Jira ticket ${url}. Use branch name ${key}.`;
+}
+
+/** Active sprints; if none, each board's next upcoming sprint (boards list future sprints in start order). */
+export function defaultSprints<T extends { state: string; boardName?: string }>(sprints: T[]): T[] {
+  const active = sprints.filter((sp) => sp.state === "active");
+  if (active.length > 0) return active;
+  const next = new Map<string | undefined, T>();
+  for (const sp of sprints) if (sp.state === "future" && !next.has(sp.boardName)) next.set(sp.boardName, sp);
+  return [...next.values()];
 }

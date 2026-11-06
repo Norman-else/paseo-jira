@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defaultPrompt, defaultSprints, jiraSettings } from "../shared/jira";
-import { buildJql, buildListJql } from "./jql";
+import { buildSearchJql, buildListJql } from "./jql";
 import { descriptionToMarkdown } from "./description-markdown";
 
 type JiraSettings = z.output<typeof jiraSettings.schema>;
@@ -20,6 +20,10 @@ const SearchResponseSchema = z.object({
 });
 
 const JiraSprintSchema = z.object({ id: z.number(), name: z.string(), state: z.string(), boardId: z.number().optional() });
+
+const IssuePickerSchema = z.object({
+  sections: z.array(z.object({ issues: z.array(z.object({ key: z.string() })) })),
+});
 
 const ListResponseSchema = z.object({
   issues: z.array(
@@ -253,7 +257,12 @@ export function createJiraClient(settings: JiraSettings) {
     },
     async search(query: string) {
       const body = {
-        jql: buildJql(query, settings.defaultJql),
+        jql: await buildSearchJql(query, settings.defaultJql, async (number) => {
+          // Search all visible issues, not just the user's recently viewed tickets.
+          const params = new URLSearchParams({ query: number, currentJQL: "ORDER BY updated DESC" });
+          const picker = IssuePickerSchema.parse(await request(`/rest/api/3/issue/picker?${params}`));
+          return picker.sections.flatMap((section) => section.issues.map((issue) => issue.key));
+        }),
         maxResults: 50,
         fields: ["summary", "status", "assignee"],
       };

@@ -7,7 +7,7 @@ A [Paseo](https://paseo.sh) plugin that turns Jira tickets into running coding a
 - **Start modal**: edit the prompt, pick the project and model, and optionally run in a fresh git
   worktree branched off a remote branch of your choice (defaults to the remote default branch).
 - **Composer attachment**: on the New Workspace screen, use **+ → Jira ticket** to attach a ticket
-  to the first message.
+  to the first message. Search by full ticket key (`PSOS-6094`), ticket number (`6094`), or text.
 
 The prompt only contains the ticket link and the branch name (the ticket key):
 

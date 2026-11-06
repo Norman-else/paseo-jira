@@ -157,7 +157,7 @@ export const jiraAttachments = defineAttachmentSource({
   title: "Jira ticket",
   icon: "Ticket",
   pickerTitle: "Attach Jira ticket",
-  searchPlaceholder: "Ticket key or text",
+  searchPlaceholder: "Ticket key, number or text",
   search: searchTicketsRpc,
 });
 

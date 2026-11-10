@@ -35,6 +35,7 @@ import {
 } from "../shared/jira";
 import { startProjects } from "./start-projects";
 import { devspaceTargetError, devspaceWorkspaceOptions, type DevspaceTarget } from "../shared/devspace-worktree";
+import { DevspaceDirectoryPicker } from "./devspace-directory-picker";
 
 function Spinner({ color }: { color: string }) {
   return <ActivityIndicator color={color} style={{ paddingVertical: 16 }} />;
@@ -334,7 +335,11 @@ function StartModal({
   styles,
   navigation,
   compact,
+  theme,
+  hostId,
 }: {
+  theme: PluginScreenProps["theme"];
+  hostId: string;
   compact: boolean;
   ticket: Ticket;
   onClose(): void;
@@ -352,6 +357,7 @@ function StartModal({
   const [baseBranch, setBaseBranch] = useState("");
   const [model, setModel] = useState("");
   const [devspaceDrafts, setDevspaceDrafts] = useState<Record<string, DevspaceTarget>>({});
+  const [choosingDirectory, setChoosingDirectory] = useState(false);
 
   const models = useQuery({
     queryKey: ["models"],
@@ -459,7 +465,14 @@ function StartModal({
   return (
     <Modal title={`Start ${ticket.identifier}`} open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content>
-        {picking ? (
+        {choosingDirectory ? (
+          <DevspaceDirectoryPicker
+            theme={theme}
+            launchHostId={hostId}
+            onChoose={(projectPath) => { updateDevspaceTarget({ projectPath }); setChoosingDirectory(false); }}
+            onCancel={() => setChoosingDirectory(false)}
+          />
+        ) : picking ? (
           <PickerView picking={picking} onDone={() => setPicking(null)} styles={styles} />
         ) : (
         <>
@@ -530,15 +543,23 @@ function StartModal({
         ) : (
           <View style={{ gap: 12 }}>
             <Field label="DevSpace project path" styles={styles}>
-              <TextInput
-                style={styles.input}
-                value={devspaceTarget.projectPath}
-                onChangeText={(projectPath) => updateDevspaceTarget({ projectPath })}
-                placeholder="/Users/name/work/project"
-                autoCapitalize="none"
-                autoCorrect={false}
-                accessibilityLabel="DevSpace project path"
-              />
+              <View style={{ flexDirection: compact ? "column" : "row", gap: 8 }}>
+                <TextInput
+                  style={[styles.input, compact ? null : { flex: 1 }]}
+                  value={devspaceTarget.projectPath}
+                  onChangeText={(projectPath) => updateDevspaceTarget({ projectPath })}
+                  placeholder="/Users/name/work/project"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel="DevSpace project path"
+                />
+                <Pressable accessibilityRole="button" accessibilityLabel="Choose DevSpace project directory"
+                  onPress={() => setChoosingDirectory(true)}
+                  style={[styles.pickerBack, { paddingHorizontal: 12 }]}>
+                  <Icon name="FolderOpen" size={16} color={styles.text.color} />
+                  <Text style={styles.text}>Browse</Text>
+                </Pressable>
+              </View>
             </Field>
             <Text style={[styles.muted, { fontSize: 12 }]}>Path on your Mac or other DevSpace machine. Remembered for this project on the selected host.</Text>
             <Field label="Base ref" styles={styles}>
@@ -930,7 +951,7 @@ function StartButton({ item, styles, onStart }: { item: ListItem; styles: Styles
   );
 }
 
-export function JiraScreen({ theme, layout, navigation, onOpenSettings }: PluginScreenProps & { onOpenSettings?: () => void }) {
+export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: PluginScreenProps & { onOpenSettings?: () => void }) {
   const queryClient = useQueryClient();
   const styles = useStyles(theme, layout.compact);
   const list = useRpc(listTicketsRpc);
@@ -1283,6 +1304,8 @@ export function JiraScreen({ theme, layout, navigation, onOpenSettings }: Plugin
           styles={styles}
           navigation={navigation}
           compact={layout.compact}
+          theme={theme}
+          hostId={host.id}
         />
       ) : null}
     </View>

@@ -31,6 +31,7 @@ import {
   ticketDetailsRpc,
   type Sprint,
 } from "../shared/jira";
+import { startProjects } from "./start-projects";
 
 function Spinner({ color }: { color: string }) {
   return <ActivityIndicator color={color} style={{ paddingVertical: 16 }} />;
@@ -367,20 +368,20 @@ function StartModal({
 
   const workspaces = useQuery({
     queryKey: ["projects"],
-    queryFn: async () =>
-      (await paseo.projects.list()).projects
-        .filter((p) => p.projectKind === "git")
-        .map((p) => ({ id: p.projectId, name: p.projectCustomName || p.projectDisplayName, root: p.projectRootPath })),
+    queryFn: async () => startProjects((await paseo.projects.list()).projects),
   });
   useEffect(() => {
     if (!workspaceId && workspaces.data?.[0]) setWorkspaceId(workspaces.data[0].id);
   }, [workspaces.data, workspaceId]);
 
-  const projectRoot = workspaces.data?.find((p) => p.id === workspaceId)?.root;
+  const selectedProject = workspaces.data?.find((p) => p.id === workspaceId);
+  const projectRoot = selectedProject?.root;
+  const canUseWorktree = selectedProject?.supportsWorktree ?? false;
+  const worktreeEnabled = useWorktree && canUseWorktree;
   const branches = useQuery({
     queryKey: ["branches", projectRoot],
     queryFn: () => listBranches({ cwd: projectRoot! }),
-    enabled: useWorktree && !!projectRoot,
+    enabled: worktreeEnabled && !!projectRoot,
   });
   useEffect(() => {
     if (branches.data) setBaseBranch(branches.data.defaultBranch ?? branches.data.branches[0] ?? "");
@@ -396,8 +397,8 @@ function StartModal({
       const cwd = project.root;
       if (!model) throw new Error("Choose a model");
       const config = { provider: model };
-      if (!useWorktree) {
-        // Opens (or reuses) the workspace rooted at the repo directory itself.
+      if (!worktreeEnabled) {
+        // Opens (or reuses) the workspace rooted at the selected project directory.
         const workspace = await paseo.workspaces.open(cwd);
         const agent = await workspace.agents.create({ config, prompt, attachments, title: ticket.identifier });
         return { agentId: agent.id, workspaceId: workspace.id };
@@ -442,9 +443,15 @@ function StartModal({
           <Spinner color={styles.muted.color} />
         ) : workspaces.error ? (
           <Text style={styles.error}>{workspaces.error.message}</Text>
+        ) : options.length === 0 ? (
+          <Text style={styles.muted}>No projects on this host. Add a project in Paseo first.</Text>
         ) : (
           <PickerTrigger
-            picking={{ label: "Project", options, value: workspaceId, onChange: setWorkspaceId }}
+            picking={{ label: "Project", options, value: workspaceId, onChange: (id) => {
+              setWorkspaceId(id);
+              setUseWorktree(false);
+              setBaseBranch("");
+            } }}
             onOpen={setPicking}
             styles={styles}
           />
@@ -463,16 +470,21 @@ function StartModal({
         <View style={[styles.field, { paddingVertical: 10 }]}>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={styles.text}>Use worktree</Text>
-            <Text style={[styles.muted, { fontSize: 12 }]}>New branch {ticket.identifier} from a remote branch</Text>
+            <Text style={[styles.muted, { fontSize: 12 }]}>
+              {canUseWorktree
+                ? `New branch ${ticket.identifier} from a remote branch`
+                : "Worktrees require a Git project on this host"}
+            </Text>
           </View>
           <Switch
-            value={useWorktree}
+            value={worktreeEnabled}
             onValueChange={setUseWorktree}
+            disabled={!canUseWorktree}
             trackColor={{ true: styles.accent.color, false: styles.fieldBorder.borderColor }}
             accessibilityLabel="Use worktree"
           />
         </View>
-        {!useWorktree ? null : branches.error ? (
+        {!worktreeEnabled ? null : branches.error ? (
           <Text style={styles.error}>{branches.error.message}</Text>
         ) : branches.data ? (
           <PickerTrigger
@@ -496,7 +508,7 @@ function StartModal({
             { alignItems: "center", paddingVertical: 10, marginTop: 4, opacity: start.isPending ? 0.6 : 1 },
             compact ? null : { alignSelf: "flex-end", paddingHorizontal: 24 },
           ]}
-          disabled={start.isPending || !model || (useWorktree && !baseBranch) || !workspaceId || !prompt.trim()}
+          disabled={start.isPending || !model || (worktreeEnabled && !baseBranch) || !workspaceId || !prompt.trim()}
           onPress={() => start.mutate()}
         >
           <Text style={[styles.buttonText, { fontWeight: "600" }]}>{start.isPending ? "Starting…" : "Start"}</Text>

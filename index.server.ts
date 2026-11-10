@@ -2,10 +2,11 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { createJiraClient } from "./server/jira";
 import { remoteBranches } from "./server/git";
 import { updateJiraPlugin } from "./server/plugin-update";
-import { assignRpc, jiraSettings, searchAssigneesRpc, listBoardsRpc, listTransitionsRpc, transitionRpc, listSprintsRpc, listTicketsRpc, remoteBranchesRpc, searchTicketsRpc, testConnectionRpc, ticketDetailsRpc, updatePluginRpc } from "./shared/jira";
+import { assignRpc, devspaceWorktreeSettings, jiraSettings, searchAssigneesRpc, listBoardsRpc, listTransitionsRpc, transitionRpc, listSprintsRpc, listTicketsRpc, remoteBranchesRpc, searchTicketsRpc, testConnectionRpc, ticketDetailsRpc, updatePluginRpc } from "./shared/jira";
 
 export default function contribute(server: PluginServerContext) {
   const settings = server.registerSettings(jiraSettings);
+  server.registerSettings(devspaceWorktreeSettings);
 
   async function jira() {
     const current = await settings.read();

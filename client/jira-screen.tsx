@@ -6,6 +6,7 @@ import {
   openExternalUrl,
   usePaseo,
   useRpc,
+  useSettings,
   type PluginScreenProps,
 } from "@getpaseo/plugin/client";
 import {
@@ -19,6 +20,7 @@ import {
 } from "@getpaseo/plugin/client/ui";
 import {
   startPrompt,
+  devspaceWorktreeSettings,
   defaultSprints,
   listSprintsRpc,
   assignRpc,
@@ -32,6 +34,7 @@ import {
   type Sprint,
 } from "../shared/jira";
 import { startProjects } from "./start-projects";
+import { devspaceTargetError, devspaceWorkspaceOptions, type DevspaceTarget } from "../shared/devspace-worktree";
 
 function Spinner({ color }: { color: string }) {
   return <ActivityIndicator color={color} style={{ paddingVertical: 16 }} />;
@@ -340,6 +343,7 @@ function StartModal({
 }) {
   const paseo = usePaseo();
   const listBranches = useRpc(remoteBranchesRpc);
+  const devspaceSettings = useSettings(devspaceWorktreeSettings);
   const toast = useToast();
   const [prompt, setPrompt] = useState(() => startPrompt(ticket.identifier));
   const [picking, setPicking] = useState<Picking | null>(null);
@@ -347,6 +351,7 @@ function StartModal({
   const [useWorktree, setUseWorktree] = useState(false);
   const [baseBranch, setBaseBranch] = useState("");
   const [model, setModel] = useState("");
+  const [devspaceDrafts, setDevspaceDrafts] = useState<Record<string, DevspaceTarget>>({});
 
   const models = useQuery({
     queryKey: ["models"],
@@ -376,12 +381,19 @@ function StartModal({
 
   const selectedProject = workspaces.data?.find((p) => p.id === workspaceId);
   const projectRoot = selectedProject?.root;
-  const canUseWorktree = selectedProject?.supportsWorktree ?? false;
-  const worktreeEnabled = useWorktree && canUseWorktree;
+  const canUseNativeWorktree = selectedProject?.supportsWorktree ?? false;
+  const nativeWorktreeEnabled = useWorktree && canUseNativeWorktree;
+  const devspaceWorktreeEnabled = useWorktree && !!selectedProject && !canUseNativeWorktree;
+  const savedDevspaceTarget = devspaceSettings.status === "ready" ? devspaceSettings.values.projects[workspaceId] : undefined;
+  const devspaceTarget = devspaceDrafts[workspaceId] ?? savedDevspaceTarget ?? { projectPath: "", baseRef: "HEAD" };
+  const targetError = devspaceTargetError(devspaceTarget);
+  const updateDevspaceTarget = (patch: Partial<DevspaceTarget>) => {
+    setDevspaceDrafts((drafts) => ({ ...drafts, [workspaceId]: { ...devspaceTarget, ...patch } }));
+  };
   const branches = useQuery({
     queryKey: ["branches", projectRoot],
     queryFn: () => listBranches({ cwd: projectRoot! }),
-    enabled: worktreeEnabled && !!projectRoot,
+    enabled: nativeWorktreeEnabled && !!projectRoot,
   });
   useEffect(() => {
     if (branches.data) setBaseBranch(branches.data.defaultBranch ?? branches.data.branches[0] ?? "");
@@ -397,7 +409,27 @@ function StartModal({
       const cwd = project.root;
       if (!model) throw new Error("Choose a model");
       const config = { provider: model };
-      if (!worktreeEnabled) {
+      if (devspaceWorktreeEnabled) {
+        const options = devspaceWorkspaceOptions({
+          project,
+          ticket,
+          provider: model,
+          prompt,
+          target: devspaceTarget,
+          attachments,
+        });
+        if (devspaceSettings.status !== "ready") throw new Error("DevSpace settings are not ready. Reload them and try again.");
+        const target = { projectPath: devspaceTarget.projectPath.trim(), baseRef: devspaceTarget.baseRef.trim() };
+        const saved = await devspaceSettings.save({
+          ...devspaceSettings.values,
+          projects: { ...devspaceSettings.values.projects, [project.id]: target },
+        }, devspaceSettings.revision);
+        if (!saved) throw new Error("Could not save the DevSpace project settings. Reload them and try again.");
+        // The agent uses its existing MCP authorization to create the worktree on the project machine.
+        const workspace = await paseo.workspaces.create(options);
+        return { workspaceId: workspace.id };
+      }
+      if (!nativeWorktreeEnabled) {
         // Opens (or reuses) the workspace rooted at the selected project directory.
         const workspace = await paseo.workspaces.open(cwd);
         const agent = await workspace.agents.create({ config, prompt, attachments, title: ticket.identifier });
@@ -414,7 +446,9 @@ function StartModal({
     },
     onSuccess: (result) => {
       onClose();
-      toast.show(`Started agent for ${ticket.identifier}`, { variant: "success" });
+      toast.show(devspaceWorktreeEnabled
+        ? `Started agent for ${ticket.identifier}; preparing DevSpace worktree`
+        : `Started agent for ${ticket.identifier}`, { variant: "success" });
       if ("agentId" in result && result.agentId) navigation?.openAgent({ agentId: result.agentId });
       else navigation?.openWorkspace({ workspaceId: result.workspaceId });
     },
@@ -471,20 +505,58 @@ function StartModal({
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={styles.text}>Use worktree</Text>
             <Text style={[styles.muted, { fontSize: 12 }]}>
-              {canUseWorktree
+              {canUseNativeWorktree
                 ? `New branch ${ticket.identifier} from a remote branch`
-                : "Worktrees require a Git project on this host"}
+                : "Agent creates an isolated worktree through DevSpace before editing"}
             </Text>
           </View>
           <Switch
-            value={worktreeEnabled}
+            value={useWorktree}
             onValueChange={setUseWorktree}
-            disabled={!canUseWorktree}
+            disabled={!selectedProject}
             trackColor={{ true: styles.accent.color, false: styles.fieldBorder.borderColor }}
             accessibilityLabel="Use worktree"
           />
         </View>
-        {!worktreeEnabled ? null : branches.error ? (
+        {!devspaceWorktreeEnabled ? null : devspaceSettings.status === "loading" ? (
+          <Spinner color={styles.muted.color} />
+        ) : devspaceSettings.status !== "ready" ? (
+          <View style={{ gap: 8 }}>
+            <Text style={styles.error}>{devspaceSettings.error}</Text>
+            <Pressable accessibilityRole="button" onPress={() => void devspaceSettings.reload()}>
+              <Text style={styles.accent}>Reload DevSpace settings</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={{ gap: 12 }}>
+            <Field label="DevSpace project path" styles={styles}>
+              <TextInput
+                style={styles.input}
+                value={devspaceTarget.projectPath}
+                onChangeText={(projectPath) => updateDevspaceTarget({ projectPath })}
+                placeholder="/Users/name/work/project"
+                autoCapitalize="none"
+                autoCorrect={false}
+                accessibilityLabel="DevSpace project path"
+              />
+            </Field>
+            <Text style={[styles.muted, { fontSize: 12 }]}>Path on your Mac or other DevSpace machine. Remembered for this project on the selected host.</Text>
+            <Field label="Base ref" styles={styles}>
+              <TextInput
+                style={styles.input}
+                value={devspaceTarget.baseRef}
+                onChangeText={(baseRef) => updateDevspaceTarget({ baseRef })}
+                placeholder="HEAD or origin/master"
+                autoCapitalize="none"
+                autoCorrect={false}
+                accessibilityLabel="DevSpace base ref"
+              />
+            </Field>
+            {targetError && devspaceTarget.projectPath.trim() ? <Text style={styles.error}>{targetError}</Text> : null}
+            {devspaceSettings.saveError ? <Text style={styles.error}>{devspaceSettings.saveError}</Text> : null}
+          </View>
+        )}
+        {!nativeWorktreeEnabled ? null : branches.error ? (
           <Text style={styles.error}>{branches.error.message}</Text>
         ) : branches.data ? (
           <PickerTrigger
@@ -508,7 +580,9 @@ function StartModal({
             { alignItems: "center", paddingVertical: 10, marginTop: 4, opacity: start.isPending ? 0.6 : 1 },
             compact ? null : { alignSelf: "flex-end", paddingHorizontal: 24 },
           ]}
-          disabled={start.isPending || !model || (worktreeEnabled && !baseBranch) || !workspaceId || !prompt.trim()}
+          disabled={start.isPending || !model || (nativeWorktreeEnabled && !baseBranch)
+            || (devspaceWorktreeEnabled && (devspaceSettings.status !== "ready" || devspaceSettings.saving || !!targetError))
+            || !workspaceId || !prompt.trim()}
           onPress={() => start.mutate()}
         >
           <Text style={[styles.buttonText, { fontWeight: "600" }]}>{start.isPending ? "Starting…" : "Start"}</Text>

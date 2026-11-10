@@ -24,6 +24,18 @@ export const jiraSettings = defineSettings({
   }),
 });
 
+export const devspaceWorktreeSettings = defineSettings({
+  id: "devspace-worktrees",
+  scope: "host",
+  version: 1,
+  schema: z.object({
+    projects: z.record(z.string(), z.object({
+      projectPath: z.string(),
+      baseRef: z.string().default("HEAD"),
+    })).default({}),
+  }),
+});
+
 export const searchTicketsRpc = defineRpc({
   name: "jira.search",
   input: z.object({ query: z.string() }),

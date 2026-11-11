@@ -3,8 +3,8 @@ import { Platform, View, useWindowDimensions } from "react-native";
 import { Modal, ScrollView } from "@getpaseo/plugin/client/ui";
 import { mountWebPopover } from "./web";
 
-export function FloatingPopover({ anchor, label, onClose, children }: {
-  anchor: RefObject<View | null>; label: string; onClose(): void; children: ReactNode;
+export function FloatingPopover({ anchor, label, onClose, children, matchAnchorWidth = false }: {
+  anchor: RefObject<View | null>; label: string; onClose(): void; children: ReactNode; matchAnchorWidth?: boolean;
 }) {
   const surface = useRef<View>(null);
   const dismiss = useRef(onClose);
@@ -13,10 +13,10 @@ export function FloatingPopover({ anchor, label, onClose, children }: {
   const [fallback, setFallback] = useState(Platform.OS !== "web");
   useLayoutEffect(() => {
     if (fallback) return;
-    const cleanup = mountWebPopover(surface.current, anchor.current, () => dismiss.current());
+    const cleanup = mountWebPopover(surface.current, anchor.current, () => dismiss.current(), matchAnchorWidth);
     if (!cleanup) setFallback(true);
     return cleanup ?? undefined;
-  }, [anchor, fallback]);
+  }, [anchor, fallback, matchAnchorWidth]);
   if (fallback) {
     return <Modal title={`Choose ${label.toLowerCase()}`} open onOpenChange={(open) => !open && onClose()}><Modal.Content>{children}</Modal.Content></Modal>;
   }

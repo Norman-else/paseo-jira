@@ -244,7 +244,7 @@ function PickerTrigger({ picking, onOpen, onClose, expanded, disabled, styles }:
         <Icon name={expanded ? "ChevronUp" : "ChevronDown"} size={16} color={styles.muted.color} />
       </Pressable>
       {expanded ? (
-        <FloatingPopover anchor={anchor} label={picking.label} onClose={onClose}>
+        <FloatingPopover anchor={anchor} label={picking.label} onClose={onClose} matchAnchorWidth>
           <PickerView picking={picking} onDone={onClose} styles={styles} />
         </FloatingPopover>
       ) : null}

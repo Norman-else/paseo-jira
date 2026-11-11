@@ -18,7 +18,7 @@ declare const window: {
 };
 
 /** Promote an existing RN View to the browser's top layer, above modal overflow clipping. */
-export function mountWebPopover(surface: unknown, anchor: unknown, onDismiss: () => void): (() => void) | null {
+export function mountWebPopover(surface: unknown, anchor: unknown, onDismiss: () => void, matchAnchorWidth = false): (() => void) | null {
   if (Platform.OS !== "web") return null;
   const node = surface as PopoverNode | null;
   const trigger = anchor as PopoverNode | null;
@@ -26,7 +26,7 @@ export function mountWebPopover(surface: unknown, anchor: unknown, onDismiss: ()
   let active = true;
   const position = () => {
     const rect = trigger.getBoundingClientRect();
-    const width = Math.min(460, window.innerWidth - 24);
+    const width = Math.min(matchAnchorWidth ? rect.width : 460, window.innerWidth - 24);
     node.style.width = `${width}px`;
     node.style.maxHeight = `${window.innerHeight - 24}px`;
     const height = node.getBoundingClientRect().height;

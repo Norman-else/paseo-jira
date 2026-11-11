@@ -195,6 +195,7 @@ function useStyles(theme: Theme, compact: boolean) {
         borderWidth: 1,
         borderColor: theme.colors.border,
       },
+      sprintControl: { height: 34, paddingVertical: 0, justifyContent: "center" as const },
       button: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: theme.colors.accent },
       buttonText: { color: theme.colors.accentForeground },
     }),
@@ -1031,7 +1032,7 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Choose sprint"
-            style={styles.selectTrigger}
+            style={[styles.selectTrigger, styles.sprintControl]}
             onPress={() => setMenuOpen((o) => !o)}
           >
             <Icon name="Zap" size={14} color={c.foregroundMuted} />
@@ -1080,7 +1081,7 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
           <Pressable accessibilityRole="button"
             accessibilityLabel={`${current.state === "future" ? "Start" : "Complete"} sprint ${current.name}`}
             onPress={() => { setMenuOpen(false); setManagingSprint(current); }}
-            style={({ pressed }) => [styles.chip, { minHeight: 32, borderColor: c.accent, flexShrink: 0 }, pressed && styles.rowPressed]}>
+            style={({ pressed }) => [styles.selectTrigger, styles.sprintControl, { borderColor: c.accent, flexShrink: 0 }, pressed && styles.rowPressed]}>
             <Icon name={current.state === "future" ? "Play" : "CircleCheck"} size={13} color={c.accent} />
             <Text style={[styles.accent, { fontSize: 12 }]}>{current.state === "future" ? "Start sprint" : "Complete sprint"}</Text>
           </Pressable>

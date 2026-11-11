@@ -61,6 +61,7 @@ export function DevspaceDirectoryPicker({ theme, launchHostId, selectedPath, onC
         ))}
       </View>
       <TextInput value={filter} onChangeText={setFilter} placeholder="Search project name or path"
+        autoFocus
         accessibilityLabel="Search DevSpace project directories"
         style={{ color: text.color, padding: 10, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8 }} />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 4 }} keyboardShouldPersistTaps="handled">

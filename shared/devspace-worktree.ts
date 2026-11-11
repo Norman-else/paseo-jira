@@ -6,6 +6,38 @@ export interface DevspaceTarget {
 // A UI preference resolved by the agent on the actual DevSpace repository, never a Git ref.
 export const DEVSPACE_DEFAULT_BRANCH = "@default-branch";
 
+export type StartRequirements = {
+  projectSelected: boolean;
+  model: string;
+  prompt: string;
+  loading: boolean;
+  worktree: { kind: "none" } | { kind: "native"; baseBranch: string; loading: boolean; error?: string } |
+    { kind: "devspace"; target: DevspaceTarget; settingsReady: boolean; saving: boolean };
+};
+
+/** Explain a blocked launch instead of rendering a silently disabled Start button. */
+export function startProblem(input: StartRequirements): { message: string; chooseDirectory?: boolean } | null {
+  if (input.loading) return { message: "Projects and models are still loading. Try again in a moment." };
+  if (!input.projectSelected) return { message: "Choose a project before starting." };
+  if (!input.model) return { message: "Choose a model before starting." };
+  if (!input.prompt.trim()) return { message: "Enter a task prompt before starting." };
+  if (input.worktree.kind === "native") {
+    if (input.worktree.loading) return { message: "Git branches are still loading. Try again in a moment." };
+    if (input.worktree.error) return { message: input.worktree.error };
+    if (!input.worktree.baseBranch) return { message: "Choose a base branch before starting." };
+  }
+  if (input.worktree.kind === "devspace") {
+    if (!input.worktree.settingsReady) return { message: "DevSpace settings are not ready. Reload them and try again." };
+    if (input.worktree.saving) return { message: "DevSpace settings are being saved. Try again in a moment." };
+    if (!input.worktree.target.projectPath.trim()) return {
+      message: "Choose the actual DevSpace repository directory with Browse before starting.", chooseDirectory: true,
+    };
+    const error = devspaceTargetError(input.worktree.target);
+    if (error) return { message: error };
+  }
+  return null;
+}
+
 export function devspaceTargetError(target: DevspaceTarget): string | null {
   const path = target.projectPath.trim();
   if ((!path.startsWith("/") && !path.startsWith("~/")) || /[\x00-\x1f\x7f]/.test(path)) {

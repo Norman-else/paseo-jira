@@ -36,7 +36,7 @@ import {
   type Sprint,
 } from "../shared/jira";
 import { startProjects } from "./start-projects";
-import { DEVSPACE_DEFAULT_BRANCH, devspaceTargetError, devspaceWorkspaceOptions, type DevspaceTarget } from "../shared/devspace-worktree";
+import { DEVSPACE_DEFAULT_BRANCH, devspaceTargetError, devspaceWorkspaceOptions, startProblem, type DevspaceTarget } from "../shared/devspace-worktree";
 import { DevspaceDirectoryPicker } from "./devspace-directory-picker";
 
 function Spinner({ color }: { color: string }) {
@@ -374,6 +374,7 @@ function StartModal({
   const [devspaceDrafts, setDevspaceDrafts] = useState<Record<string, DevspaceTarget>>({});
   const [choosingDirectory, setChoosingDirectory] = useState(false);
   const [customBaseRef, setCustomBaseRef] = useState(false);
+  const [attemptedStart, setAttemptedStart] = useState(false);
   const directoryAnchor = useRef<View>(null);
 
   const models = useQuery({
@@ -423,9 +424,17 @@ function StartModal({
     if (branches.data) setBaseBranch(branches.data.defaultBranch ?? branches.data.branches[0] ?? "");
   }, [branches.data]);
 
+  const problem = startProblem({
+    projectSelected: !!selectedProject, model, prompt, loading: workspaces.isPending || models.isPending,
+    worktree: devspaceWorktreeEnabled ? {
+      kind: "devspace", target: devspaceTarget, settingsReady: devspaceSettings.status === "ready",
+      saving: devspaceSettings.status === "ready" && devspaceSettings.saving,
+    } : nativeWorktreeEnabled ? { kind: "native", baseBranch, loading: branches.isFetching, error: branches.error?.message } : { kind: "none" },
+  });
 
   const start = useMutation({
     mutationFn: async () => {
+      if (problem) throw new Error(problem.message);
       // Same shape Paseo builds for a composer plugin attachment, so the message shows the ticket as a card.
       const attachments = [ticketAttachment(ticket)];
       const project = workspaces.data?.find((p) => p.id === workspaceId);
@@ -565,7 +574,7 @@ function StartModal({
                   style={[styles.input, { minHeight: 40 }, compact ? null : { flex: 1 }]}
                   value={devspaceTarget.projectPath}
                   onChangeText={(projectPath) => updateDevspaceTarget({ projectPath })}
-                  placeholder="/Users/name/work/project"
+                  placeholder="Choose a directory with Browse"
                   autoCapitalize="none"
                   autoCorrect={false}
                   accessibilityLabel="DevSpace project path"
@@ -589,7 +598,7 @@ function StartModal({
                 </FloatingPopover>
               ) : null}
             </Field>
-            <Text style={[styles.muted, { fontSize: 12 }]}>Path on your Mac or other DevSpace machine. Remembered for this project on the selected host.</Text>
+            <Text style={[styles.muted, { fontSize: 12 }]}>Choose the repository on your DevSpace machine. The agent still runs on this Paseo host. Remembered for this project.</Text>
             <PickerTrigger
               picking={{ label: "Start from", value: startFrom, searchable: false, options: [
                 { value: "default", label: "Repository default branch (recommended)", group: "" },
@@ -636,17 +645,26 @@ function StartModal({
           <Spinner color={styles.muted.color} />
         )}
         {start.error ? <Text style={styles.error}>{start.error.message}</Text> : null}
+        {attemptedStart && problem ? <Text accessibilityRole="alert" style={[styles.error, { fontSize: 13, lineHeight: 19 }]}>{problem.message}</Text> : null}
         <Pressable
           accessibilityRole="button"
+          accessibilityState={{ disabled: start.isPending, busy: start.isPending }}
+          accessibilityHint={problem?.message}
           style={[
             styles.button,
             { alignItems: "center", paddingVertical: 10, marginTop: 4, opacity: start.isPending ? 0.6 : 1 },
             compact ? null : { alignSelf: "flex-end", paddingHorizontal: 24 },
           ]}
-          disabled={start.isPending || !model || (nativeWorktreeEnabled && !baseBranch)
-            || (devspaceWorktreeEnabled && (devspaceSettings.status !== "ready" || devspaceSettings.saving || !!targetError))
-            || !workspaceId || !prompt.trim()}
-          onPress={() => start.mutate()}
+          disabled={start.isPending}
+          onPress={() => {
+            setAttemptedStart(true);
+            if (problem) {
+              toast.error(problem.message);
+              if (problem.chooseDirectory) setChoosingDirectory(true);
+              return;
+            }
+            start.mutate();
+          }}
         >
           <Text style={[styles.buttonText, { fontWeight: "600" }]}>{start.isPending ? "Starting…" : "Start"}</Text>
         </Pressable>

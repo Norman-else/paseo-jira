@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEVSPACE_DEFAULT_BRANCH, devspaceTargetError, devspaceWorkspaceOptions, devspaceWorktreePrompt } from "./shared/devspace-worktree.ts";
+import { DEVSPACE_DEFAULT_BRANCH, devspaceTargetError, devspaceWorkspaceOptions, devspaceWorktreePrompt, startProblem, type StartRequirements } from "./shared/devspace-worktree.ts";
 import { devspaceWorktreeSettings } from "./shared/jira.ts";
 
 test("DevSpace tasks create a Paseo directory session and delegate Git isolation to the configured MCP", () => {
@@ -77,4 +77,50 @@ test("default branch choice resolves the real remote branch through DevSpace bef
   assert.match(prompt, /base_ref set to the concrete origin\/<branch> resolved in step 2/);
   assert.equal(prompt.includes(DEVSPACE_DEFAULT_BRANCH), false, "The preference token must never be passed as a Git ref");
   assert.match(prompt, /source checkout, its branch and all uncommitted changes untouched/);
+});
+
+const ready: StartRequirements = { projectSelected: true, model: "claude/opus", prompt: "Implement the ticket", loading: false, worktree: { kind: "none" } };
+
+test("Start explains missing basic fields and loading instead of silently doing nothing", () => {
+  assert.equal(startProblem(ready), null);
+  assert.match(startProblem({ ...ready, loading: true })!.message, /still loading/);
+  assert.match(startProblem({ ...ready, projectSelected: false })!.message, /Choose a project/);
+  assert.match(startProblem({ ...ready, model: "" })!.message, /Choose a model/);
+  assert.match(startProblem({ ...ready, prompt: "  " })!.message, /task prompt/);
+});
+
+test("Start opens directory selection for a missing DevSpace path and only accepts a valid target", () => {
+  const worktree = { kind: "devspace" as const, target: { projectPath: "", baseRef: DEVSPACE_DEFAULT_BRANCH }, settingsReady: true, saving: false };
+  const missing = startProblem({ ...ready, worktree });
+  assert.equal(missing?.chooseDirectory, true);
+  assert.match(missing!.message, /actual DevSpace repository directory/);
+  const valid = { ...worktree, target: { ...worktree.target, projectPath: "/Users/name/project" } };
+  assert.equal(startProblem({ ...ready, worktree: valid }), null);
+  assert.match(startProblem({ ...ready, worktree: { ...valid, settingsReady: false } })!.message, /settings are not ready/);
+  assert.match(startProblem({ ...ready, worktree: { ...valid, saving: true } })!.message, /being saved/);
+  assert.equal(startProblem({ ...ready, worktree: { ...valid, target: { ...valid.target, baseRef: "" } } })?.chooseDirectory, undefined);
+  assert.match(startProblem({ ...ready, worktree: { ...valid, target: { ...valid.target, projectPath: "relative/path" } } })!.message, /absolute path/);
+});
+
+test("native worktree Start explains branch lookup failures and requires a selected branch", () => {
+  const worktree = { kind: "native" as const, baseBranch: "origin/master", loading: false };
+  assert.equal(startProblem({ ...ready, worktree }), null);
+  assert.match(startProblem({ ...ready, worktree: { ...worktree, loading: true } })!.message, /branches are still loading/);
+  assert.match(startProblem({ ...ready, worktree: { ...worktree, baseBranch: "" } })!.message, /Choose a base branch/);
+  assert.equal(startProblem({ ...ready, worktree: { ...worktree, error: "Git access denied" } })?.message, "Git access denied");
+});
+
+test("a VPS session can launch against a Mac DevSpace directory without treating that path as VPS cwd", () => {
+  const target = { projectPath: "/Users/normanzuo/Mercaso/premier-store-os", baseRef: DEVSPACE_DEFAULT_BRANCH };
+  assert.equal(startProblem({ ...ready, worktree: { kind: "devspace", target, settingsReady: true, saving: false } }), null);
+  const options = devspaceWorkspaceOptions({
+    project: { id: "vps-project", root: "/home/ubuntu/workspaces/premier-store-os" },
+    ticket: { identifier: "PSOS-6071", title: "Book checkout payments" },
+    provider: "claude/opus", prompt: "Implement the ticket", target,
+  });
+  assert.equal(options.source.kind, "directory");
+  assert.equal(options.source.path, "/home/ubuntu/workspaces/premier-store-os");
+  assert.equal(options.agent.cwd, "/home/ubuntu/workspaces/premier-store-os");
+  assert.ok(options.agent.prompt.includes(JSON.stringify(target.projectPath)));
+  assert.match(options.agent.prompt, /project and Git repository are on the machine served by the configured DevSpace MCP/);
 });

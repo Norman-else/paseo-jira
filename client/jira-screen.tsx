@@ -36,7 +36,7 @@ import {
   type Sprint,
 } from "../shared/jira";
 import { startProjects } from "./start-projects";
-import { devspaceTargetError, devspaceWorkspaceOptions, type DevspaceTarget } from "../shared/devspace-worktree";
+import { DEVSPACE_DEFAULT_BRANCH, devspaceTargetError, devspaceWorkspaceOptions, type DevspaceTarget } from "../shared/devspace-worktree";
 import { DevspaceDirectoryPicker } from "./devspace-directory-picker";
 
 function Spinner({ color }: { color: string }) {
@@ -372,6 +372,7 @@ function StartModal({
   const [model, setModel] = useState("");
   const [devspaceDrafts, setDevspaceDrafts] = useState<Record<string, DevspaceTarget>>({});
   const [choosingDirectory, setChoosingDirectory] = useState(false);
+  const [customBaseRef, setCustomBaseRef] = useState(false);
   const directoryAnchor = useRef<View>(null);
 
   const models = useQuery({
@@ -406,7 +407,8 @@ function StartModal({
   const nativeWorktreeEnabled = useWorktree && canUseNativeWorktree;
   const devspaceWorktreeEnabled = useWorktree && !!selectedProject && !canUseNativeWorktree;
   const savedDevspaceTarget = devspaceSettings.status === "ready" ? devspaceSettings.values.projects[workspaceId] : undefined;
-  const devspaceTarget = devspaceDrafts[workspaceId] ?? savedDevspaceTarget ?? { projectPath: "", baseRef: "HEAD" };
+  const devspaceTarget = devspaceDrafts[workspaceId] ?? savedDevspaceTarget ?? { projectPath: "", baseRef: DEVSPACE_DEFAULT_BRANCH };
+  const startFrom = customBaseRef ? "custom" : devspaceTarget.baseRef === DEVSPACE_DEFAULT_BRANCH ? "default" : devspaceTarget.baseRef === "HEAD" ? "current" : "custom";
   const targetError = devspaceTargetError(devspaceTarget);
   const updateDevspaceTarget = (patch: Partial<DevspaceTarget>) => {
     setDevspaceDrafts((drafts) => ({ ...drafts, [workspaceId]: { ...devspaceTarget, ...patch } }));
@@ -509,6 +511,7 @@ function StartModal({
               setWorkspaceId(id);
               setUseWorktree(false);
               setBaseBranch("");
+              setCustomBaseRef(false);
             } }}
             onOpen={setPicking}
             onClose={() => setPicking(null)} expanded={picking === "Project"} disabled={start.isPending}
@@ -586,20 +589,30 @@ function StartModal({
               ) : null}
             </Field>
             <Text style={[styles.muted, { fontSize: 12 }]}>Path on your Mac or other DevSpace machine. Remembered for this project on the selected host.</Text>
-            <Field label="Base ref (branch, tag or commit)" styles={styles}>
-              <TextInput
-                style={styles.input}
-                value={devspaceTarget.baseRef}
-                onChangeText={(baseRef) => updateDevspaceTarget({ baseRef })}
-                placeholder="HEAD or origin/master"
-                autoCapitalize="none"
-                autoCorrect={false}
-                accessibilityLabel="DevSpace base ref"
-              />
+            <PickerTrigger
+              picking={{ label: "Start from", value: startFrom, options: [
+                { value: "default", label: "Repository default branch (recommended)", group: "" },
+                { value: "current", label: "Current checkout", group: "" },
+                { value: "custom", label: "Custom branch, tag or commit", group: "" },
+              ], onChange: (mode) => {
+                setCustomBaseRef(mode === "custom");
+                updateDevspaceTarget({ baseRef: mode === "default" ? DEVSPACE_DEFAULT_BRANCH : mode === "current" ? "HEAD" :
+                  startFrom === "custom" ? devspaceTarget.baseRef : "" });
+              } }}
+              onOpen={setPicking} onClose={() => setPicking(null)} expanded={picking === "Start from"} disabled={start.isPending} styles={styles}
+            />
+            {startFrom === "custom" ? (
+              <Field label="Branch, tag or commit" styles={styles}>
+                <TextInput style={styles.input} value={devspaceTarget.baseRef}
+                  onChangeText={(baseRef) => updateDevspaceTarget({ baseRef })} placeholder="e.g. origin/release, v1.2.3 or a commit ID"
+                  autoCapitalize="none" autoCorrect={false} accessibilityLabel="Custom DevSpace base ref" />
+              </Field>
+            ) : (
               <Text style={[styles.muted, { fontSize: 12, lineHeight: 18 }]}>
-                Starting point in the DevSpace repository above. HEAD uses its current checkout. Use origin/master or origin/main to fetch origin first and start from that remote branch.
+                {startFrom === "default" ? "Starts from the latest default branch of the selected repository. Detected automatically when the agent starts." :
+                  "Starts from the selected repository's current checked-out commit. Uncommitted changes are not copied."}
               </Text>
-            </Field>
+            )}
             {targetError && devspaceTarget.projectPath.trim() ? <Text style={styles.error}>{targetError}</Text> : null}
             {devspaceSettings.saveError ? <Text style={styles.error}>{devspaceSettings.saveError}</Text> : null}
           </View>

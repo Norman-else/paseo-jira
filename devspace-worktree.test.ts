@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { devspaceTargetError, devspaceWorkspaceOptions, devspaceWorktreePrompt } from "./shared/devspace-worktree.ts";
+import { DEVSPACE_DEFAULT_BRANCH, devspaceTargetError, devspaceWorkspaceOptions, devspaceWorktreePrompt } from "./shared/devspace-worktree.ts";
 import { devspaceWorktreeSettings } from "./shared/jira.ts";
 
 test("DevSpace tasks create a Paseo directory session and delegate Git isolation to the configured MCP", () => {
@@ -64,4 +64,17 @@ test("host settings keep each project's DevSpace target separate and default to 
   } });
   assert.equal(values.projects.connector.baseRef, "HEAD");
   assert.equal(values.projects.store.baseRef, "origin/main");
+});
+
+test("default branch choice resolves the real remote branch through DevSpace before creating the worktree", () => {
+  const prompt = devspaceWorktreePrompt({ projectPath: "/Users/name/work/app", baseRef: DEVSPACE_DEFAULT_BRANCH,
+    branchName: "PSOS-6071", taskPrompt: "Implement the attached ticket" });
+  assert.equal(devspaceTargetError({ projectPath: "/Users/name/work/app", baseRef: DEVSPACE_DEFAULT_BRANCH }), null);
+  assert.match(prompt, /fetch origin, then run git ls-remote --symref origin HEAD/);
+  assert.match(prompt, /verify refs\/remotes\/origin\/<branch>\^\{commit\}/);
+  assert.match(prompt, /Do not guess master or main and do not fall back to HEAD/);
+  assert.ok(prompt.includes(JSON.stringify({ path: "/Users/name/work/app", mode: "worktree" })));
+  assert.match(prompt, /base_ref set to the concrete origin\/<branch> resolved in step 2/);
+  assert.equal(prompt.includes(DEVSPACE_DEFAULT_BRANCH), false, "The preference token must never be passed as a Git ref");
+  assert.match(prompt, /source checkout, its branch and all uncommitted changes untouched/);
 });

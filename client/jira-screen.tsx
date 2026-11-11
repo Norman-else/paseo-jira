@@ -372,6 +372,7 @@ function StartModal({
   const [model, setModel] = useState("");
   const [devspaceDrafts, setDevspaceDrafts] = useState<Record<string, DevspaceTarget>>({});
   const [choosingDirectory, setChoosingDirectory] = useState(false);
+  const directoryAnchor = useRef<View>(null);
 
   const models = useQuery({
     queryKey: ["models"],
@@ -480,18 +481,11 @@ function StartModal({
     <Modal title={`Start ${ticket.identifier}`} open onOpenChange={(open) => {
       if (!open) {
         if (picking) setPicking(null);
+        else if (choosingDirectory) setChoosingDirectory(false);
         else onClose();
       }
     }}>
       <Modal.Content>
-        {choosingDirectory ? (
-          <DevspaceDirectoryPicker
-            theme={theme}
-            launchHostId={hostId}
-            onChoose={(projectPath) => { updateDevspaceTarget({ projectPath }); setChoosingDirectory(false); }}
-            onCancel={() => setChoosingDirectory(false)}
-          />
-        ) : (
         <>
         <Text style={[styles.text, { fontSize: 15, fontWeight: "500" }]}>{ticket.title}</Text>
         <Field label="Prompt" styles={styles}>
@@ -562,9 +556,9 @@ function StartModal({
         ) : (
           <View style={{ gap: 12 }}>
             <Field label="DevSpace project path" styles={styles}>
-              <View style={{ flexDirection: compact ? "column" : "row", gap: 8 }}>
+              <View style={{ flexDirection: compact ? "column" : "row", alignItems: compact ? "stretch" : "center", gap: 8 }}>
                 <TextInput
-                  style={[styles.input, compact ? null : { flex: 1 }]}
+                  style={[styles.input, { minHeight: 40 }, compact ? null : { flex: 1 }]}
                   value={devspaceTarget.projectPath}
                   onChangeText={(projectPath) => updateDevspaceTarget({ projectPath })}
                   placeholder="/Users/name/work/project"
@@ -572,16 +566,27 @@ function StartModal({
                   autoCorrect={false}
                   accessibilityLabel="DevSpace project path"
                 />
-                <Pressable accessibilityRole="button" accessibilityLabel="Choose DevSpace project directory"
-                  onPress={() => setChoosingDirectory(true)}
-                  style={[styles.pickerBack, { paddingHorizontal: 12 }]}>
+                <Pressable ref={directoryAnchor} accessibilityRole="button" accessibilityLabel="Choose DevSpace project directory"
+                  accessibilityState={{ expanded: choosingDirectory, disabled: start.isPending }} disabled={start.isPending}
+                  onPress={() => setChoosingDirectory((open) => !open)}
+                  style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+                    minHeight: 40, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, borderWidth: 1,
+                    borderColor: choosingDirectory ? styles.accent.color : styles.fieldBorder.borderColor,
+                    alignSelf: compact ? "flex-start" : "center", backgroundColor: pressed ? styles.rowSelected.backgroundColor : "transparent" })}>
                   <Icon name="FolderOpen" size={16} color={styles.text.color} />
                   <Text style={styles.text}>Browse</Text>
                 </Pressable>
               </View>
+              {choosingDirectory ? (
+                <FloatingPopover anchor={directoryAnchor} label="DevSpace project directory" onClose={() => setChoosingDirectory(false)}>
+                  <DevspaceDirectoryPicker theme={theme} launchHostId={hostId} selectedPath={devspaceTarget.projectPath}
+                    onChoose={(projectPath) => { updateDevspaceTarget({ projectPath }); setChoosingDirectory(false); }}
+                    onCancel={() => setChoosingDirectory(false)} />
+                </FloatingPopover>
+              ) : null}
             </Field>
             <Text style={[styles.muted, { fontSize: 12 }]}>Path on your Mac or other DevSpace machine. Remembered for this project on the selected host.</Text>
-            <Field label="Base ref" styles={styles}>
+            <Field label="Base ref (branch, tag or commit)" styles={styles}>
               <TextInput
                 style={styles.input}
                 value={devspaceTarget.baseRef}
@@ -591,6 +596,9 @@ function StartModal({
                 autoCorrect={false}
                 accessibilityLabel="DevSpace base ref"
               />
+              <Text style={[styles.muted, { fontSize: 12, lineHeight: 18 }]}>
+                Starting point in the DevSpace repository above. HEAD uses its current checkout. Use origin/master or origin/main to fetch origin first and start from that remote branch.
+              </Text>
             </Field>
             {targetError && devspaceTarget.projectPath.trim() ? <Text style={styles.error}>{targetError}</Text> : null}
             {devspaceSettings.saveError ? <Text style={styles.error}>{devspaceSettings.saveError}</Text> : null}
@@ -629,7 +637,6 @@ function StartModal({
           <Text style={[styles.buttonText, { fontWeight: "600" }]}>{start.isPending ? "Starting…" : "Start"}</Text>
         </Pressable>
         </>
-        )}
       </Modal.Content>
     </Modal>
   );

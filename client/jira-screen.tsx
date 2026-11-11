@@ -1019,7 +1019,7 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 5 }}
         />
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 14, zIndex: 10 }}>
+      <View style={{ flexDirection: "row", flexWrap: layout.compact ? "wrap" : "nowrap", alignItems: "center", gap: 14, zIndex: 10 }}>
         {/* Phones already show "Jira" in the screen header. */}
         {layout.compact ? null : (
           <View style={{ gap: 2 }}>
@@ -1076,6 +1076,15 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
             </View>
           ) : null}
         </View>
+        {current && (current.state === "future" || current.state === "active") ? (
+          <Pressable accessibilityRole="button"
+            accessibilityLabel={`${current.state === "future" ? "Start" : "Complete"} sprint ${current.name}`}
+            onPress={() => { setMenuOpen(false); setManagingSprint(current); }}
+            style={({ pressed }) => [styles.chip, { minHeight: 32, borderColor: c.accent, flexShrink: 0 }, pressed && styles.rowPressed]}>
+            <Icon name={current.state === "future" ? "Play" : "CircleCheck"} size={13} color={c.accent} />
+            <Text style={[styles.accent, { fontSize: 12 }]}>{current.state === "future" ? "Start sprint" : "Complete sprint"}</Text>
+          </Pressable>
+        ) : null}
         <View style={{ flexGrow: 1 }} />
         <Pressable
           accessibilityRole="switch"
@@ -1128,20 +1137,6 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
             <Icon name="Settings" size={16} color={c.foregroundMuted} />
           </Pressable>
         ) : null}
-      </View>
-
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {(current ? [current] : active).filter((sp) => sp.state === "future" || sp.state === "active").map((sp) => (
-          <Pressable key={sp.id} accessibilityRole="button"
-            accessibilityLabel={`${sp.state === "future" ? "Start" : "Complete"} sprint ${sp.name}`}
-            onPress={() => { setMenuOpen(false); setManagingSprint(sp); }}
-            style={({ pressed }) => [styles.chip, { minHeight: 36, borderColor: c.accent }, pressed && styles.rowPressed]}>
-            <Icon name={sp.state === "future" ? "Play" : "CircleCheck"} size={14} color={c.accent} />
-            <Text style={[styles.accent, { fontSize: 12 }]}>
-              {sp.state === "future" ? "Start sprint" : "Complete sprint"}{!current ? ` · ${sp.name}` : ""}
-            </Text>
-          </Pressable>
-        ))}
       </View>
 
       <View style={styles.searchBox}>

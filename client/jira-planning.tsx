@@ -132,7 +132,12 @@ export function SprintActionModal({ sprint, theme, onClose, onChanged, compact =
   const close = () => { if (!change.isPending) onClose(); };
   const action = starting ? "Start sprint" : "Complete sprint";
   return (
-    <Modal title={action} open onOpenChange={(open) => !open && close()}>
+    <Modal title={action} open onOpenChange={(open) => {
+      if (!open) {
+        if (pickingDate) setPickingDate(null);
+        else close();
+      }
+    }}>
       <Modal.Content>
         <Text style={{ color: c.foreground, fontSize: 17, fontWeight: "600" }}>{sprint.name}</Text>
         {sprint.boardName ? <Text style={{ color: c.foregroundMuted }}>{sprint.boardName}</Text> : null}

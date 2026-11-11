@@ -1,8 +1,33 @@
-import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { Icon, ScrollView as PickerScrollView } from "@getpaseo/plugin/client/ui";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { Icon, Modal, ScrollView as PickerScrollView } from "@getpaseo/plugin/client/ui";
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { formatSprintDate, parseSprintDate } from "../shared/planning";
+import { mountWebPopover } from "./web";
+
+function DateTimePopover({ anchor, label, onClose, children }: {
+  anchor: RefObject<View | null>; label: string; onClose(): void; children: ReactNode;
+}) {
+  const surface = useRef<View>(null);
+  const dismiss = useRef(onClose);
+  dismiss.current = onClose;
+  const { height } = useWindowDimensions();
+  const [fallback, setFallback] = useState(Platform.OS !== "web");
+  useLayoutEffect(() => {
+    if (fallback) return;
+    const cleanup = mountWebPopover(surface.current, anchor.current, () => dismiss.current());
+    if (!cleanup) setFallback(true);
+    return cleanup ?? undefined;
+  }, [anchor, fallback]);
+  if (fallback) {
+    return <Modal title={`Choose ${label.toLowerCase()}`} open onOpenChange={(open) => !open && onClose()}><Modal.Content>{children}</Modal.Content></Modal>;
+  }
+  return (
+    <View ref={surface} accessibilityLabel={`Choose ${label.toLowerCase()}`} style={{ position: "absolute", opacity: 0, width: 460, maxHeight: height - 24, zIndex: 1000 }}>
+      <PickerScrollView style={{ maxHeight: height - 24 }} keyboardShouldPersistTaps="handled">{children}</PickerScrollView>
+    </View>
+  );
+}
 
 function TimeColumn({ label, part, total, current, theme, disabled, onChoose, compact }: {
   label: string; part: "hour" | "minute"; total: number; current: number; theme: PluginScreenProps["theme"];
@@ -33,6 +58,7 @@ export function SprintDateTimeField({ label, value, onChange, theme, disabled, e
   disabled: boolean; expanded: boolean; onToggle(): void; compact?: boolean;
 }) {
   const c = theme.colors;
+  const anchor = useRef<View>(null);
   let selected: Date;
   try { selected = new Date(parseSprintDate(value)); } catch { selected = new Date(); }
   const year = selected.getFullYear(), month = selected.getMonth();
@@ -61,7 +87,7 @@ export function SprintDateTimeField({ label, value, onChange, theme, disabled, e
   return (
     <View style={{ gap: 6 }}>
       <Text style={{ color: c.foregroundMuted }}>{label}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value}. Choose date and time`}
+      <Pressable ref={anchor} accessibilityRole="button" accessibilityLabel={`${label}: ${value}. Choose date and time`}
         accessibilityState={{ expanded, disabled }} disabled={disabled} onPress={onToggle}
         style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44,
           borderWidth: 1, borderColor: expanded ? c.accent : c.border, borderRadius: 6, paddingHorizontal: 12,
@@ -73,7 +99,9 @@ export function SprintDateTimeField({ label, value, onChange, theme, disabled, e
         <Icon name={expanded ? "ChevronUp" : "ChevronDown"} size={14} color={c.foregroundMuted} />
       </Pressable>
       {expanded ? (
-        <View style={{ gap: 12, padding: 12, borderWidth: 1, borderColor: c.border, borderRadius: 8, backgroundColor: c.surface1 }}>
+        <DateTimePopover anchor={anchor} label={label} onClose={onToggle}>
+        <View style={{ gap: 12, padding: 12, borderWidth: 1, borderColor: c.border, borderRadius: 8, backgroundColor: c.surface1,
+          shadowColor: "#000000", shadowOpacity: 0.22, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 12 }}>
           <View style={{ flexDirection: compact ? "column" : "row", gap: 12 }}>
           <View style={{ flex: 1, gap: 8 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -122,6 +150,7 @@ export function SprintDateTimeField({ label, value, onChange, theme, disabled, e
             <Text style={{ color: c.accent, fontWeight: "600" }}>Done</Text>
           </Pressable>
         </View>
+        </DateTimePopover>
       ) : null}
     </View>
   );

@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRpc, type PluginScreenProps } from "@getpaseo/plugin/client";
-import { Modal, useToast } from "@getpaseo/plugin/client/ui";
-import { completeSprintRpc, setStoryPointsRpc, startSprintRpc, storyPointsRpc, type Sprint } from "../shared/jira";
+import { Modal, ScrollView, useToast } from "@getpaseo/plugin/client/ui";
+import { completeSprintRpc, previewCompleteSprintRpc, setStoryPointsRpc, startSprintRpc, storyPointsRpc, type Sprint } from "../shared/jira";
 import { formatSprintDate, parseSprintDate, parseStoryPoints } from "../shared/planning";
 
 type Theme = PluginScreenProps["theme"];
@@ -95,9 +95,15 @@ export function StoryPointsModal({ item, theme, onClose, onChanged }: CommonProp
 export function SprintActionModal({ sprint, theme, onClose, onChanged }: CommonProps & { sprint: Sprint }) {
   const start = useRpc(startSprintRpc);
   const complete = useRpc(completeSprintRpc);
+  const previewComplete = useRpc(previewCompleteSprintRpc);
   const toast = useToast();
   const c = theme.colors;
   const starting = sprint.state === "future";
+  const preview = useQuery({
+    queryKey: ["jira-complete-sprint", sprint.id], queryFn: () => previewComplete({ sprintId: sprint.id }),
+    enabled: !starting, staleTime: 0, refetchOnWindowFocus: false, retry: false,
+  });
+  const plan = preview.data;
   const [startDate, setStartDate] = useState(() => formatSprintDate(sprint.startDate ? new Date(sprint.startDate) : new Date()));
   const [endDate, setEndDate] = useState(() => {
     if (sprint.endDate) return formatSprintDate(new Date(sprint.endDate));
@@ -114,7 +120,7 @@ export function SprintActionModal({ sprint, theme, onClose, onChanged }: CommonP
   const change = useMutation({
     mutationFn: () => starting
       ? start({ sprintId: sprint.id, startDate: parseSprintDate(startDate), endDate: parseSprintDate(endDate) })
-      : complete({ sprintId: sprint.id }),
+      : complete({ sprintId: sprint.id, confirmation: plan!.confirmation }),
     onSuccess: async () => {
       toast.show(`${sprint.name} ${starting ? "started" : "completed"}`, { variant: "success" });
       await onChanged();
@@ -141,14 +147,50 @@ export function SprintActionModal({ sprint, theme, onClose, onChanged }: CommonP
             ))}
             {validation ? <Text style={{ color: c.statusDanger }}>{validation}</Text> : null}
           </View>
-        ) : (
-          <Text style={{ color: c.foreground }}>Complete this active sprint in Jira? Issue statuses will stay as they are. Review any unfinished work in Jira before completing.</Text>
-        )}
+        ) : preview.isPending ? <ActivityIndicator color={c.foregroundMuted} /> : preview.error ? (
+          <View style={{ gap: 10 }}>
+            <Text style={{ color: c.statusDanger }}>{preview.error.message}</Text>
+            <Action label="Retry preview" theme={theme} disabled={preview.isFetching} onPress={() => { void preview.refetch(); }} />
+          </View>
+        ) : plan ? (
+          <View style={{ gap: 12 }}>
+            <Text style={{ color: c.foreground }}>{plan.doneCount} Done · {plan.incomplete.length} unfinished · {plan.totalCount} total</Text>
+            {plan.finished ? <Text style={{ color: c.foreground }}>This sprint and its confirmed issue moves are already complete.</Text> : (
+              <>
+                {plan.recovering ? <Text style={{ color: c.statusWarning }}>This sprint is already closed. Retry to finish the previously confirmed issue moves.</Text> : null}
+                {plan.incomplete.length ? (
+                  <>
+                    <View style={{ gap: 6, padding: 12, borderWidth: 1, borderColor: c.border, borderRadius: 8 }}>
+                      <Text style={{ color: c.foregroundMuted }}>Move unfinished work to</Text>
+                      <Text style={{ color: c.foreground, fontWeight: "600" }}>{plan.destination?.name ?? "Backlog"}</Text>
+                      <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+                        {plan.destination ? `Next upcoming sprint on ${plan.boardName}, in board order.` : `No upcoming sprint exists on ${plan.boardName}.`}
+                      </Text>
+                    </View>
+                    <ScrollView style={{ maxHeight: 280 }}>
+                      <View style={{ gap: 10 }}>
+                        {plan.incomplete.map((issue) => (
+                          <View key={issue.id} style={{ gap: 4, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.border }}>
+                            <Text style={{ color: c.foreground, lineHeight: 20 }}><Text style={{ fontWeight: "600" }}>{issue.key}</Text> · {issue.title}</Text>
+                            <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>{issue.status}{issue.parentKey ? ` · Moves with parent ${issue.parentKey}` : ""}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </ScrollView>
+                    <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Confirm to complete this sprint and move the listed unfinished work. Issue statuses will stay as they are.</Text>
+                  </>
+                ) : <Text style={{ color: c.foreground }}>All visible sprint issues are Done. Confirm to complete this sprint.</Text>}
+                {plan.blockedReason ? <Text style={{ color: c.statusDanger }}>{plan.blockedReason}</Text> : null}
+              </>
+            )}
+          </View>
+        ) : null}
         {change.error ? <Text style={{ color: c.statusDanger }}>{change.error.message}</Text> : null}
+        {!starting && !change.isPending ? <Action label="Refresh preview" theme={theme} disabled={preview.isFetching} onPress={() => { change.reset(); void preview.refetch(); }} /> : null}
         <View style={{ flexDirection: "row", justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
           <Action label="Cancel" theme={theme} disabled={change.isPending} onPress={close} />
-          <Action label={change.isPending ? (starting ? "Starting…" : "Completing…") : action} theme={theme} primary
-            disabled={!!validation || change.isPending} onPress={() => change.mutate()} />
+          <Action label={change.isPending ? (starting ? "Starting…" : "Completing…") : starting ? action : plan?.recovering ? "Retry confirmed move" : "Confirm completion"} theme={theme} primary
+            disabled={!!validation || change.isPending || (!starting && (!plan || preview.isFetching || preview.isError || !!plan.blockedReason || plan.finished))} onPress={() => change.mutate()} />
         </View>
       </Modal.Content>
     </Modal>

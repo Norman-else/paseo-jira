@@ -89,7 +89,7 @@ test("list discovers point fields, preserves zero and avoids summing ambiguous e
   assert.deepEqual(result.items.map((i) => i.storyPoints), [0, null, null]);
 });
 
-test("starting and completing use partial updates and check live sprint state", async (t) => {
+test("starting uses partial updates and checks live sprint state", async (t) => {
   const { client, writes } = fixture(t, {
     "/rest/agile/1.0/sprint/10": { id: 10, name: "Next", state: "future" },
     "/rest/agile/1.0/sprint/11": { id: 11, name: "Current", state: "active" },
@@ -97,16 +97,12 @@ test("starting and completing use partial updates and check live sprint state", 
   });
   const startDate = "2026-11-11T01:00:00.000Z", endDate = "2026-11-25T01:00:00.000Z";
   await client.startSprint(10, startDate, endDate);
-  await client.completeSprint(11);
   assert.deepEqual(writes, [
     { path: "/rest/agile/1.0/sprint/10", method: "POST", body: { state: "active", startDate, endDate } },
-    { path: "/rest/agile/1.0/sprint/11", method: "POST", body: { state: "closed" } },
   ]);
   await assert.rejects(client.startSprint(11, startDate, endDate), /future sprint/);
-  await assert.rejects(client.completeSprint(10), /active sprint/);
-  await assert.rejects(client.completeSprint(12), /active sprint/);
   await assert.rejects(client.startSprint(10, endDate, startDate), /End date/);
-  assert.equal(writes.length, 2);
+  assert.equal(writes.length, 1);
 });
 
 test("sprints pagination retains start and end dates for the start dialog", async (t) => {

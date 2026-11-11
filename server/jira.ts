@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defaultPrompt, defaultSprints, jiraSettings } from "../shared/jira";
 import { buildSearchJql, buildListJql } from "./jql";
 import { descriptionToMarkdown } from "./description-markdown";
+import { completionStore, createSprintCompletion, type CompletionStore } from "./sprint-completion";
 
 type JiraSettings = z.output<typeof jiraSettings.schema>;
 
@@ -108,7 +109,7 @@ function describeFailure(status: number): string {
   return `Jira request failed with HTTP ${status}`;
 }
 
-export function createJiraClient(settings: JiraSettings) {
+export function createJiraClient(settings: JiraSettings, recoveryStore?: CompletionStore) {
   const { email, apiToken } = settings;
   const baseUrl = settings.baseUrl.replace(/\/+$/, "");
   if (!baseUrl || !email || !apiToken) {
@@ -129,6 +130,7 @@ export function createJiraClient(settings: JiraSettings) {
     }
     return response.status === 204 ? null : response.json();
   }
+  const completion = createSprintCompletion(request, recoveryStore ?? completionStore(baseUrl, email));
 
   // Discover site-specific custom field IDs; never hardcode a site's Story Points field.
   let fields: Promise<z.infer<typeof FieldsSchema>> | undefined;
@@ -256,12 +258,8 @@ export function createJiraClient(settings: JiraSettings) {
       });
       return { ok: true as const };
     },
-    async completeSprint(sprintId: number) {
-      const sprint = JiraSprintSchema.parse(await request(`/rest/agile/1.0/sprint/${sprintId}`));
-      if (sprint.state !== "active") throw new Error("Only an active sprint can be completed. Refresh the sprint list.");
-      await request(`/rest/agile/1.0/sprint/${sprintId}`, { method: "POST", body: JSON.stringify({ state: "closed" }) });
-      return { ok: true as const };
-    },
+    previewCompleteSprint: completion.preview,
+    completeSprint: completion.complete,
     async boards() {
       const boards: { id: number; name: string; project: string | null }[] = [];
       for (let startAt = 0; ; startAt += 50) {

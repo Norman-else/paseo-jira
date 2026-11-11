@@ -130,9 +130,26 @@ export const startSprintRpc = defineRpc({
   output: z.object({ ok: z.literal(true) }),
 });
 
+export const SprintCompletionPlanSchema = z.object({
+  sprintId: z.number(), sprintName: z.string(), boardId: z.number(), boardName: z.string(),
+  totalCount: z.number(), doneCount: z.number(),
+  incomplete: z.array(z.object({
+    id: z.string(), key: z.string(), title: z.string(), status: z.string(), statusId: z.string(), parentKey: z.string().nullable(),
+  })),
+  destination: z.object({ id: z.number(), name: z.string() }).nullable(),
+  confirmation: z.string(), blockedReason: z.string().nullable(), recovering: z.boolean(), finished: z.boolean(),
+});
+export type SprintCompletionPlan = z.infer<typeof SprintCompletionPlanSchema>;
+
+export const previewCompleteSprintRpc = defineRpc({
+  name: "jira.preview-complete-sprint",
+  input: z.object({ sprintId: z.number().int().positive() }),
+  output: SprintCompletionPlanSchema,
+});
+
 export const completeSprintRpc = defineRpc({
   name: "jira.complete-sprint",
-  input: z.object({ sprintId: z.number().int().positive() }),
+  input: z.object({ sprintId: z.number().int().positive(), confirmation: z.string().min(1) }),
   output: z.object({ ok: z.literal(true) }),
 });
 

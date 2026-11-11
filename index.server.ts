@@ -2,7 +2,7 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { createJiraClient } from "./server/jira";
 import { remoteBranches } from "./server/git";
 import { updateJiraPlugin } from "./server/plugin-update";
-import { assignRpc, devspaceWorktreeSettings, jiraSettings, searchAssigneesRpc, listBoardsRpc, listTransitionsRpc, transitionRpc, listSprintsRpc, listTicketsRpc, remoteBranchesRpc, searchTicketsRpc, testConnectionRpc, ticketDetailsRpc, updatePluginRpc, storyPointsRpc, setStoryPointsRpc, startSprintRpc, completeSprintRpc } from "./shared/jira";
+import { assignRpc, devspaceWorktreeSettings, jiraSettings, searchAssigneesRpc, listBoardsRpc, listTransitionsRpc, transitionRpc, listSprintsRpc, listTicketsRpc, remoteBranchesRpc, searchTicketsRpc, testConnectionRpc, ticketDetailsRpc, updatePluginRpc, storyPointsRpc, setStoryPointsRpc, startSprintRpc, completeSprintRpc, previewCompleteSprintRpc } from "./shared/jira";
 
 export default function contribute(server: PluginServerContext) {
   const settings = server.registerSettings(jiraSettings);
@@ -22,7 +22,8 @@ export default function contribute(server: PluginServerContext) {
   server.handle(storyPointsRpc, async ({ key }) => (await jira()).storyPoints(key));
   server.handle(setStoryPointsRpc, async ({ key, fieldId, value }) => (await jira()).setStoryPoints(key, fieldId, value));
   server.handle(startSprintRpc, async ({ sprintId, startDate, endDate }) => (await jira()).startSprint(sprintId, startDate, endDate));
-  server.handle(completeSprintRpc, async ({ sprintId }) => (await jira()).completeSprint(sprintId));
+  server.handle(previewCompleteSprintRpc, async ({ sprintId }) => (await jira()).previewCompleteSprint(sprintId));
+  server.handle(completeSprintRpc, async ({ sprintId, confirmation }) => (await jira()).completeSprint(sprintId, confirmation));
   server.handle(listTransitionsRpc, async ({ key }) => (await jira()).transitions(key));
   server.handle(transitionRpc, async ({ key, transitionId }) => (await jira()).transition(key, transitionId));
   server.handle(searchAssigneesRpc, async ({ key, query }) => (await jira()).assignees(key, query));

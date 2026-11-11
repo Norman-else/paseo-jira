@@ -1301,7 +1301,7 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
           }} />
       ) : null}
       {managingSprint ? (
-        <SprintActionModal key={managingSprint.id} sprint={managingSprint} theme={theme} onClose={() => setManagingSprint(null)}
+        <SprintActionModal key={managingSprint.id} sprint={managingSprint} theme={theme} compact={layout.compact} onClose={() => setManagingSprint(null)}
           onChanged={async () => {
             if (managingSprint.state === "active") setSprint(ALL_ACTIVE);
             await Promise.all([

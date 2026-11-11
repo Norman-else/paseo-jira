@@ -5,6 +5,7 @@ import { useRpc, type PluginScreenProps } from "@getpaseo/plugin/client";
 import { Modal, ScrollView, useToast } from "@getpaseo/plugin/client/ui";
 import { completeSprintRpc, previewCompleteSprintRpc, setStoryPointsRpc, startSprintRpc, storyPointsRpc, type Sprint } from "../shared/jira";
 import { formatSprintDate, parseSprintDate, parseStoryPoints } from "../shared/planning";
+import { SprintDateTimeField } from "./sprint-date-time-field";
 
 type Theme = PluginScreenProps["theme"];
 type CommonProps = { theme: Theme; onClose(): void; onChanged(): Promise<void> };
@@ -92,13 +93,14 @@ export function StoryPointsModal({ item, theme, onClose, onChanged }: CommonProp
   );
 }
 
-export function SprintActionModal({ sprint, theme, onClose, onChanged }: CommonProps & { sprint: Sprint }) {
+export function SprintActionModal({ sprint, theme, onClose, onChanged, compact = false }: CommonProps & { sprint: Sprint; compact?: boolean }) {
   const start = useRpc(startSprintRpc);
   const complete = useRpc(completeSprintRpc);
   const previewComplete = useRpc(previewCompleteSprintRpc);
   const toast = useToast();
   const c = theme.colors;
   const starting = sprint.state === "future";
+  const [pickingDate, setPickingDate] = useState<string | null>(null);
   const preview = useQuery({
     queryKey: ["jira-complete-sprint", sprint.id], queryFn: () => previewComplete({ sprintId: sprint.id }),
     enabled: !starting, staleTime: 0, refetchOnWindowFocus: false, retry: false,
@@ -138,12 +140,8 @@ export function SprintActionModal({ sprint, theme, onClose, onChanged }: CommonP
           <View style={{ gap: 10 }}>
             <Text style={{ color: c.foregroundMuted }}>Dates use your local timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</Text>
             {([ ["Start date", startDate, setStartDate], ["End date", endDate, setEndDate] ] as const).map(([label, value, update]) => (
-              <View key={label} style={{ gap: 5 }}>
-                <Text style={{ color: c.foregroundMuted }}>{label}</Text>
-                <TextInput accessibilityLabel={label} value={value} onChangeText={update} editable={!change.isPending}
-                  placeholder="YYYY-MM-DD HH:mm" placeholderTextColor={c.foregroundMuted} autoCapitalize="none"
-                  style={{ color: c.foreground, borderWidth: 1, borderColor: c.border, borderRadius: 6, minHeight: 42, padding: 10 }} />
-              </View>
+              <SprintDateTimeField key={label} label={label} value={value} onChange={update} theme={theme} disabled={change.isPending} compact={compact}
+                expanded={pickingDate === label} onToggle={() => setPickingDate((current) => current === label ? null : label)} />
             ))}
             {validation ? <Text style={{ color: c.statusDanger }}>{validation}</Text> : null}
           </View>

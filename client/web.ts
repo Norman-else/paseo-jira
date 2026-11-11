@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 
-// The only browser-specific boundary. The calendar itself remains React Native UI.
+// The only browser-specific boundary. Popover content remains React Native UI.
 type PopoverNode = {
   showPopover?(options?: { source: unknown }): void;
   hidePopover(): void;

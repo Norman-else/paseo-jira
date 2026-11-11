@@ -1,33 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
-import { Icon, Modal, ScrollView as PickerScrollView } from "@getpaseo/plugin/client/ui";
+import { useEffect, useRef, useState } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import { Icon, ScrollView as PickerScrollView } from "@getpaseo/plugin/client/ui";
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { formatSprintDate, parseSprintDate } from "../shared/planning";
-import { mountWebPopover } from "./web";
-
-function DateTimePopover({ anchor, label, onClose, children }: {
-  anchor: RefObject<View | null>; label: string; onClose(): void; children: ReactNode;
-}) {
-  const surface = useRef<View>(null);
-  const dismiss = useRef(onClose);
-  dismiss.current = onClose;
-  const { height } = useWindowDimensions();
-  const [fallback, setFallback] = useState(Platform.OS !== "web");
-  useLayoutEffect(() => {
-    if (fallback) return;
-    const cleanup = mountWebPopover(surface.current, anchor.current, () => dismiss.current());
-    if (!cleanup) setFallback(true);
-    return cleanup ?? undefined;
-  }, [anchor, fallback]);
-  if (fallback) {
-    return <Modal title={`Choose ${label.toLowerCase()}`} open onOpenChange={(open) => !open && onClose()}><Modal.Content>{children}</Modal.Content></Modal>;
-  }
-  return (
-    <View ref={surface} accessibilityLabel={`Choose ${label.toLowerCase()}`} style={{ position: "absolute", opacity: 0, width: 460, maxHeight: height - 24, zIndex: 1000 }}>
-      <PickerScrollView style={{ maxHeight: height - 24 }} keyboardShouldPersistTaps="handled">{children}</PickerScrollView>
-    </View>
-  );
-}
+import { FloatingPopover } from "./floating-popover";
 
 function TimeColumn({ label, part, total, current, theme, disabled, onChoose, compact }: {
   label: string; part: "hour" | "minute"; total: number; current: number; theme: PluginScreenProps["theme"];
@@ -99,7 +75,7 @@ export function SprintDateTimeField({ label, value, onChange, theme, disabled, e
         <Icon name={expanded ? "ChevronUp" : "ChevronDown"} size={14} color={c.foregroundMuted} />
       </Pressable>
       {expanded ? (
-        <DateTimePopover anchor={anchor} label={label} onClose={onToggle}>
+        <FloatingPopover anchor={anchor} label={label} onClose={onToggle}>
         <View style={{ gap: 12, padding: 12, borderWidth: 1, borderColor: c.border, borderRadius: 8, backgroundColor: c.surface1,
           shadowColor: "#000000", shadowOpacity: 0.22, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 12 }}>
           <View style={{ flexDirection: compact ? "column" : "row", gap: 12 }}>
@@ -150,7 +126,7 @@ export function SprintDateTimeField({ label, value, onChange, theme, disabled, e
             <Text style={{ color: c.accent, fontWeight: "600" }}>Done</Text>
           </Pressable>
         </View>
-        </DateTimePopover>
+        </FloatingPopover>
       ) : null}
     </View>
   );

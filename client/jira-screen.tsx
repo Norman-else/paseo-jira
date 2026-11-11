@@ -1,8 +1,9 @@
 import type { RpcOutput } from "@getpaseo/plugin";
 import { StoryPointsModal, SprintActionModal } from "./jira-planning";
+import { FloatingPopover } from "./floating-popover";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ActivityIndicator, Pressable, Switch, TextInput as RNTextInput, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ActivityIndicator, Pressable, Switch, TextInput as RNTextInput, Text, View, useWindowDimensions } from "react-native";
 import {
   openExternalUrl,
   usePaseo,
@@ -217,15 +218,21 @@ function Field({ label, styles, children }: { label: string; styles: Styles; chi
   );
 }
 
-function PickerTrigger({ picking, onOpen, styles }: { picking: Picking; onOpen(p: Picking): void; styles: Styles }) {
+function PickerTrigger({ picking, onOpen, onClose, expanded, disabled, styles }: {
+  picking: Picking; onOpen(label: string): void; onClose(): void; expanded: boolean; disabled?: boolean; styles: Styles;
+}) {
   const current = picking.options.find((o) => o.value === picking.value);
+  const anchor = useRef<View>(null);
   return (
     <Field label={picking.label} styles={styles}>
       <Pressable
+        ref={anchor}
         accessibilityRole="button"
         accessibilityLabel={`Choose ${picking.label}`}
-        style={styles.field}
-        onPress={() => onOpen(picking)}
+        accessibilityState={{ expanded, disabled }}
+        disabled={disabled}
+        style={[styles.field, expanded && { borderColor: styles.accent.color }, disabled && { opacity: 0.5 }]}
+        onPress={() => expanded ? onClose() : onOpen(picking.label)}
       >
         <Text style={[styles.text, { flex: 1 }]} numberOfLines={1}>
           {current
@@ -234,16 +241,21 @@ function PickerTrigger({ picking, onOpen, styles }: { picking: Picking; onOpen(p
               : current.label
             : `Choose ${picking.label.toLowerCase()}`}
         </Text>
-        <Icon name="ChevronRight" size={16} color={styles.muted.color} />
+        <Icon name={expanded ? "ChevronUp" : "ChevronDown"} size={16} color={styles.muted.color} />
       </Pressable>
+      {expanded ? (
+        <FloatingPopover anchor={anchor} label={picking.label} onClose={onClose}>
+          <PickerView picking={picking} onDone={onClose} styles={styles} />
+        </FloatingPopover>
+      ) : null}
     </Field>
   );
 }
 
-// ponytail: the picker replaces the modal body instead of floating — the plugin Modal clips overlays
-// and offers no popover API. Swap for a host popover if Paseo adds one for modals.
 function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): void; styles: Styles }) {
   const [filter, setFilter] = useState("");
+  const [hovered, setHovered] = useState<string | null>(null);
+  const { height } = useWindowDimensions();
   const needle = filter.trim().toLowerCase();
   const groups = new Map<string, PickerOption[]>();
   for (const o of picking.options) {
@@ -251,17 +263,15 @@ function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): v
     groups.set(o.group, [...(groups.get(o.group) ?? []), o]);
   }
   return (
-    // Fixed height so the dialog doesn't jump in size as the filter narrows the list.
-    <View style={{ gap: 12, height: 480 }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Back"
-        onPress={onDone}
-        style={({ pressed }) => [styles.pickerBack, pressed && styles.rowPressed]}
-      >
-        <Icon name="ArrowLeft" size={16} color={styles.text.color} />
+    // Size to the available options, keeping the same height while searching.
+    <View style={{ gap: 12, height: Math.min(420, height - 48, 126 + picking.options.length * 40 + new Set(picking.options.map((o) => o.group).filter(Boolean)).size * 26), padding: 12, borderRadius: 8,
+      borderWidth: 1, borderColor: styles.fieldBorder.borderColor, backgroundColor: styles.card.backgroundColor,
+      shadowColor: "#000000", shadowOpacity: 0.22, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 12 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <Text style={[styles.text, { fontSize: 15, fontWeight: "600" }]}>{picking.label}</Text>
-      </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Close ${picking.label} menu`} onPress={onDone}
+          style={{ padding: 6 }}><Icon name="X" size={16} color={styles.muted.color} /></Pressable>
+      </View>
       <View style={styles.searchBox}>
         <Icon name="Search" size={16} color={styles.muted.color} />
         <RNTextInput
@@ -279,7 +289,7 @@ function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): v
           </Pressable>
         ) : null}
       </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }} keyboardShouldPersistTaps="handled">
         {[...groups].map(([group, items]) => (
           <View key={group} style={{ gap: 2 }}>
             {group ? <Text style={styles.menuGroup}>{group}</Text> : null}
@@ -290,7 +300,9 @@ function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): v
                   key={o.value}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  style={({ pressed }) => [styles.pickerRow, selected && styles.rowSelected, pressed && styles.rowPressed]}
+                  onHoverIn={() => setHovered(o.value)}
+                  onHoverOut={() => setHovered(null)}
+                  style={({ pressed }) => [styles.pickerRow, (selected || hovered === o.value) && styles.rowSelected, pressed && styles.rowPressed]}
                   onPress={() => {
                     picking.onChange(o.value);
                     onDone();
@@ -353,7 +365,7 @@ function StartModal({
   const devspaceSettings = useSettings(devspaceWorktreeSettings);
   const toast = useToast();
   const [prompt, setPrompt] = useState(() => startPrompt(ticket.identifier));
-  const [picking, setPicking] = useState<Picking | null>(null);
+  const [picking, setPicking] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState("");
   const [useWorktree, setUseWorktree] = useState(false);
   const [baseBranch, setBaseBranch] = useState("");
@@ -465,7 +477,12 @@ function StartModal({
   const options = (workspaces.data ?? []).map((p) => ({ label: p.name, value: p.id, group: "" }));
 
   return (
-    <Modal title={`Start ${ticket.identifier}`} open onOpenChange={(open) => !open && onClose()}>
+    <Modal title={`Start ${ticket.identifier}`} open onOpenChange={(open) => {
+      if (!open) {
+        if (picking) setPicking(null);
+        else onClose();
+      }
+    }}>
       <Modal.Content>
         {choosingDirectory ? (
           <DevspaceDirectoryPicker
@@ -474,8 +491,6 @@ function StartModal({
             onChoose={(projectPath) => { updateDevspaceTarget({ projectPath }); setChoosingDirectory(false); }}
             onCancel={() => setChoosingDirectory(false)}
           />
-        ) : picking ? (
-          <PickerView picking={picking} onDone={() => setPicking(null)} styles={styles} />
         ) : (
         <>
         <Text style={[styles.text, { fontSize: 15, fontWeight: "500" }]}>{ticket.title}</Text>
@@ -502,6 +517,7 @@ function StartModal({
               setBaseBranch("");
             } }}
             onOpen={setPicking}
+            onClose={() => setPicking(null)} expanded={picking === "Project"} disabled={start.isPending}
             styles={styles}
           />
         )}
@@ -511,6 +527,7 @@ function StartModal({
           <PickerTrigger
             picking={{ label: "Model", options: models.data, value: model, onChange: setModel }}
             onOpen={setPicking}
+            onClose={() => setPicking(null)} expanded={picking === "Model"} disabled={start.isPending}
             styles={styles}
           />
         ) : (
@@ -590,6 +607,7 @@ function StartModal({
               onChange: setBaseBranch,
             }}
             onOpen={setPicking}
+            onClose={() => setPicking(null)} expanded={picking === "Base branch"} disabled={start.isPending}
             styles={styles}
           />
         ) : (

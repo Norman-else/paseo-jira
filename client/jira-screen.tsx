@@ -1,4 +1,5 @@
 import type { RpcOutput } from "@getpaseo/plugin";
+import { StoryPointsModal, SprintActionModal } from "./jira-planning";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, Switch, TextInput as RNTextInput, Text, View } from "react-native";
@@ -965,6 +966,8 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
   const [selected, setSelected] = useState<Ticket | null>(null);
   const [transitioning, setTransitioning] = useState<ListItem | null>(null);
   const [assigning, setAssigning] = useState<ListItem | null>(null);
+  const [estimating, setEstimating] = useState<ListItem | null>(null);
+  const [managingSprint, setManagingSprint] = useState<Sprint | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const sprintId = sprint === ALL_ACTIVE ? null : Number(sprint);
   const tickets = useQuery({
@@ -1127,6 +1130,20 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
         ) : null}
       </View>
 
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {(current ? [current] : active).filter((sp) => sp.state === "future" || sp.state === "active").map((sp) => (
+          <Pressable key={sp.id} accessibilityRole="button"
+            accessibilityLabel={`${sp.state === "future" ? "Start" : "Complete"} sprint ${sp.name}`}
+            onPress={() => { setMenuOpen(false); setManagingSprint(sp); }}
+            style={({ pressed }) => [styles.chip, { minHeight: 36, borderColor: c.accent }, pressed && styles.rowPressed]}>
+            <Icon name={sp.state === "future" ? "Play" : "CircleCheck"} size={14} color={c.accent} />
+            <Text style={[styles.accent, { fontSize: 12 }]}>
+              {sp.state === "future" ? "Start sprint" : "Complete sprint"}{!current ? ` · ${sp.name}` : ""}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <View style={styles.searchBox}>
         <Icon name="Search" size={16} color={c.foregroundMuted} />
         <RNTextInput
@@ -1219,12 +1236,18 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
                       justifyContent: layout.compact ? "flex-start" : "flex-end",
                       flexWrap: "wrap",
                       gap: 8,
-                      maxWidth: layout.compact ? undefined : 390,
+                      maxWidth: layout.compact ? undefined : 470,
                       paddingLeft: layout.compact ? 14 : 0,
                       paddingRight: 14,
                       paddingBottom: layout.compact ? 12 : 0,
                     }}
                   >
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Edit Story Points for ${item.key}`}
+                      onPress={() => setEstimating(item)}
+                      style={({ pressed }) => [styles.chip, { minHeight: 32 }, pressed && styles.rowPressed]}>
+                      <Text style={[styles.muted, { fontSize: 12 }]}>SP</Text>
+                      <Text style={[styles.text, { fontSize: 12, fontWeight: "600" }]}>{item.storyPoints ?? "—"}</Text>
+                    </Pressable>
                     {item.status ? (
                       <Pressable
                         accessibilityRole="button"
@@ -1271,6 +1294,26 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
           }}
         />
       )}
+      {estimating ? (
+        <StoryPointsModal key={estimating.key} item={estimating} theme={theme} onClose={() => setEstimating(null)}
+          onChanged={async () => {
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ["jira-list"] }),
+              queryClient.invalidateQueries({ queryKey: ["jira-story-points", estimating.key] }),
+              queryClient.invalidateQueries({ queryKey: ["jira-ticket", estimating.key] }),
+            ]);
+          }} />
+      ) : null}
+      {managingSprint ? (
+        <SprintActionModal key={managingSprint.id} sprint={managingSprint} theme={theme} onClose={() => setManagingSprint(null)}
+          onChanged={async () => {
+            if (managingSprint.state === "active") setSprint(ALL_ACTIVE);
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ["jira-sprints"] }),
+              queryClient.invalidateQueries({ queryKey: ["jira-list"] }),
+            ]);
+          }} />
+      ) : null}
       {assigning ? (
         <AssignModal
           key={assigning.id}

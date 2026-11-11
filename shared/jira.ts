@@ -59,6 +59,8 @@ const SprintSchema = z.object({
   name: z.string(),
   state: z.string(),
   boardName: z.string().optional(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
 });
 export type Sprint = z.infer<typeof SprintSchema>;
 
@@ -75,6 +77,7 @@ export const listTicketsRpc = defineRpc({
         status: z.string(),
         statusCategory: z.string(),
         assignee: z.string().nullable(),
+        storyPoints: z.number().nullable(),
         sprint: SprintSchema.nullable(),
       }),
     ),
@@ -106,6 +109,31 @@ export const listSprintsRpc = defineRpc({
   name: "jira.sprints",
   input: z.object({}),
   output: z.object({ sprints: z.array(SprintSchema) }),
+});
+
+export const storyPointsRpc = defineRpc({
+  name: "jira.story-points",
+  input: z.object({ key: z.string() }),
+  output: z.object({ fields: z.array(z.object({ id: z.string(), name: z.string(), value: z.number().nullable() })) }),
+});
+
+export const setStoryPointsRpc = defineRpc({
+  name: "jira.set-story-points",
+  input: z.object({ key: z.string(), fieldId: z.string(), value: z.number().nonnegative().nullable() }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const startSprintRpc = defineRpc({
+  name: "jira.start-sprint",
+  input: z.object({ sprintId: z.number().int().positive(), startDate: z.iso.datetime({ offset: true }), endDate: z.iso.datetime({ offset: true }) })
+    .refine((input) => Date.parse(input.endDate) > Date.parse(input.startDate), { message: "End date must be after start date" }),
+  output: z.object({ ok: z.literal(true) }),
+});
+
+export const completeSprintRpc = defineRpc({
+  name: "jira.complete-sprint",
+  input: z.object({ sprintId: z.number().int().positive() }),
+  output: z.object({ ok: z.literal(true) }),
 });
 
 export const listBoardsRpc = defineRpc({

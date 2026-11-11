@@ -19,7 +19,10 @@ const SearchResponseSchema = z.object({
   ),
 });
 
-const JiraSprintSchema = z.object({ id: z.number(), name: z.string(), state: z.string(), boardId: z.number().optional() });
+const JiraSprintSchema = z.object({
+  id: z.number(), name: z.string(), state: z.string(), boardId: z.number().optional(),
+  startDate: z.string().nullish(), endDate: z.string().nullish(),
+});
 
 const IssuePickerSchema = z.object({
   sections: z.array(z.object({ issues: z.array(z.object({ key: z.string() })) })),
@@ -56,7 +59,24 @@ const TicketDetailsResponseSchema = z.object({
   }),
 });
 
-const FieldsSchema = z.array(z.object({ id: z.string(), schema: z.object({ custom: z.string().optional() }).optional() }));
+const FieldSchema = z.object({
+  id: z.string(), name: z.string().optional(),
+  schema: z.object({ type: z.string().optional(), custom: z.string().optional() }).optional(),
+});
+const FieldsSchema = z.array(FieldSchema);
+const EditMetadataSchema = z.object({ fields: z.record(z.string(), z.object({
+  name: z.string(), schema: z.object({ type: z.string().optional(), custom: z.string().optional() }).optional(),
+  operations: z.array(z.string()).optional(),
+})) });
+const BoardConfigurationSchema = z.object({ estimation: z.object({
+  type: z.string(), field: z.object({ fieldId: z.string(), displayName: z.string() }).optional(),
+}).optional() });
+function isStoryPoints(field: { name?: string; schema?: { type?: string; custom?: string } }) {
+  return field.schema?.type === "number" && (
+    field.schema.custom === "com.pyxis.greenhopper.jira:jsw-story-points" ||
+    /^(story points|story point estimate)$/i.test(field.name ?? "")
+  );
+}
 const BoardSchema = z.object({ id: z.number(), name: z.string() });
 const BoardPageSchema = z.object({
   values: z.array(BoardSchema.extend({ location: z.object({ projectKey: z.string().optional() }).optional() })),
@@ -82,7 +102,8 @@ const UsersSchema = z.array(
 );
 
 function describeFailure(status: number): string {
-  if (status === 401 || status === 403) return "Jira rejected the email or API token";
+  if (status === 401) return "Jira rejected the email or API token";
+  if (status === 403) return "You do not have permission to perform this Jira action";
   if (status === 429) return "Jira rate limit reached. Try again shortly";
   return `Jira request failed with HTTP ${status}`;
 }
@@ -109,13 +130,31 @@ export function createJiraClient(settings: JiraSettings) {
     return response.status === 204 ? null : response.json();
   }
 
-  // The sprint field is a custom field whose id differs per site; discover it once.
-  let sprintField: Promise<string | null> | undefined;
-  const findSprintField = () =>
-    (sprintField ??= request("/rest/api/3/field").then((fields) => {
-      const found = FieldsSchema.parse(fields).find((f) => f.schema?.custom === "com.pyxis.greenhopper.jira:gh-sprint");
-      return found?.id ?? null;
-    }));
+  // Discover site-specific custom field IDs; never hardcode a site's Story Points field.
+  let fields: Promise<z.infer<typeof FieldsSchema>> | undefined;
+  const getFields = () => (fields ??= request("/rest/api/3/field").then((value) => FieldsSchema.parse(value)));
+
+  async function editableStoryPoints(key: string) {
+    const [metadata, customFields, boards] = await Promise.all([
+      request(`/rest/api/3/issue/${encodeURIComponent(key)}/editmeta`).then((value) => EditMetadataSchema.parse(value)),
+      getFields(),
+      Promise.all(settings.boardIds.map(async (boardId) => ({ boardId,
+        config: BoardConfigurationSchema.parse(await request(`/rest/agile/1.0/board/${boardId}/configuration`)),
+      }))),
+    ]);
+    const fields: { id: string; name: string; boardId?: number }[] = Object.entries(metadata.fields)
+      .filter(([, field]) => isStoryPoints(field) && field.operations?.includes("set"))
+      .map(([id, field]) => ({ id, name: field.name }));
+    // Jira's board estimation API can edit points even when the field is absent from the issue screen.
+    for (const { boardId, config } of boards) {
+      const field = config.estimation?.type === "field" ? config.estimation.field : undefined;
+      if (!field || !customFields.some((f) => f.id === field.fieldId && isStoryPoints(f))) continue;
+      const existing = fields.find((f) => f.id === field.fieldId);
+      if (existing) existing.boardId ??= boardId;
+      else fields.push({ id: field.fieldId, name: field.displayName, boardId });
+    }
+    return fields;
+  }
 
   function pickSprint(value: unknown, sprintId: number | null) {
     const sprints = z.array(JiraSprintSchema).safeParse(value);
@@ -128,7 +167,9 @@ export function createJiraClient(settings: JiraSettings) {
 
   return {
     async list(input: { query: string; sprintId: number | null; mine: boolean; showDone: boolean }) {
-      const field = await findSprintField();
+      const customFields = await getFields();
+      const field = customFields.find((f) => f.schema?.custom === "com.pyxis.greenhopper.jira:gh-sprint")?.id;
+      const pointFields = customFields.filter(isStoryPoints);
       let sprintIds: number[] | null = input.sprintId === null ? null : [input.sprintId];
       if (sprintIds === null && settings.boardIds.length > 0) {
         sprintIds = defaultSprints((await this.sprints()).sprints).map((sp) => sp.id);
@@ -137,7 +178,7 @@ export function createJiraClient(settings: JiraSettings) {
       const body = {
         jql: buildListJql({ query: input.query, sprintIds, mine: input.mine, showDone: input.showDone }),
         maxResults: 100,
-        fields: ["summary", "status", "assignee", ...(field ? [field] : [])],
+        fields: ["summary", "status", "assignee", ...(field ? [field] : []), ...pointFields.map((f) => f.id)],
       };
       const { issues } = ListResponseSchema.parse(
         await request("/rest/api/3/search/jql", { method: "POST", body: JSON.stringify(body) }),
@@ -151,6 +192,11 @@ export function createJiraClient(settings: JiraSettings) {
           status: issue.fields.status?.name ?? "",
           statusCategory: issue.fields.status?.statusCategory.key ?? "",
           assignee: issue.fields.assignee?.displayName ?? null,
+          // If multiple point fields contain values, leave the summary unset; the editor lets the user choose.
+          storyPoints: (() => {
+            const values = pointFields.map((f) => issue.fields[f.id]).filter((v) => typeof v === "number");
+            return values.length === 1 ? values[0] as number : null;
+          })(),
           sprint: field ? pickSprint(issue.fields[field], input.sprintId) : null,
         })),
       };
@@ -160,10 +206,13 @@ export function createJiraClient(settings: JiraSettings) {
       const perBoard = await Promise.all(
         settings.boardIds.map(async (boardId) => {
           const board = BoardSchema.parse(await request(`/rest/agile/1.0/board/${boardId}`));
-          const open = SprintPageSchema.parse(
-            await request(`/rest/agile/1.0/board/${boardId}/sprint?state=active,future&maxResults=50`),
-          ).values;
-          return open.map((sp) => ({ id: sp.id, name: sp.name, state: sp.state, boardName: board.name }));
+          const open: z.infer<typeof JiraSprintSchema>[] = [];
+          for (let startAt = 0; ; startAt += 50) {
+            const page = SprintPageSchema.parse(await request(`/rest/agile/1.0/board/${boardId}/sprint?state=active,future&maxResults=50&startAt=${startAt}`));
+            open.push(...page.values);
+            if (page.isLast !== false || page.values.length === 0) break;
+          }
+          return open.map((sp) => ({ id: sp.id, name: sp.name, state: sp.state, boardName: board.name, startDate: sp.startDate ?? null, endDate: sp.endDate ?? null }));
         }),
       );
       const seen = new Set<number>();
@@ -172,6 +221,46 @@ export function createJiraClient(settings: JiraSettings) {
         .filter((sp) => !seen.has(sp.id) && seen.add(sp.id))
         .sort((a, b) => (SPRINT_STATE_ORDER[a.state] ?? 3) - (SPRINT_STATE_ORDER[b.state] ?? 3));
       return { sprints };
+    },
+    async storyPoints(key: string) {
+      const fields = await editableStoryPoints(key);
+      if (!fields.length) return { fields: [] };
+      const params = new URLSearchParams({ fields: fields.map((f) => f.id).join(",") });
+      const issue = z.object({ fields: z.record(z.string(), z.unknown()) }).parse(
+        await request(`/rest/api/3/issue/${encodeURIComponent(key)}?${params}`),
+      );
+      return { fields: fields.map((field) => ({ ...field, value: z.number().nullable().parse(issue.fields[field.id] ?? null) })) };
+    },
+    async setStoryPoints(key: string, fieldId: string, value: number | null) {
+      z.number().nonnegative().nullable().parse(value);
+      const fields = await editableStoryPoints(key);
+      const field = fields.find((f) => f.id === fieldId);
+      if (!field) throw new Error("Story Points is not editable for this ticket. Check its field configuration and your Jira permissions.");
+      if (field.boardId !== undefined) {
+        await request(`/rest/agile/1.0/issue/${encodeURIComponent(key)}/estimation?boardId=${field.boardId}`, {
+          method: "PUT", body: JSON.stringify({ value: value === null ? "" : String(value) }),
+        });
+      } else {
+        await request(`/rest/api/3/issue/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ fields: { [fieldId]: value } }) });
+      }
+      return { ok: true as const };
+    },
+    async startSprint(sprintId: number, startDate: string, endDate: string) {
+      if (!Number.isFinite(Date.parse(startDate)) || !Number.isFinite(Date.parse(endDate)) || Date.parse(endDate) <= Date.parse(startDate)) {
+        throw new Error("End date must be after a valid start date");
+      }
+      const sprint = JiraSprintSchema.parse(await request(`/rest/agile/1.0/sprint/${sprintId}`));
+      if (sprint.state !== "future") throw new Error("Only a future sprint can be started. Refresh the sprint list.");
+      await request(`/rest/agile/1.0/sprint/${sprintId}`, {
+        method: "POST", body: JSON.stringify({ state: "active", startDate, endDate }),
+      });
+      return { ok: true as const };
+    },
+    async completeSprint(sprintId: number) {
+      const sprint = JiraSprintSchema.parse(await request(`/rest/agile/1.0/sprint/${sprintId}`));
+      if (sprint.state !== "active") throw new Error("Only an active sprint can be completed. Refresh the sprint list.");
+      await request(`/rest/agile/1.0/sprint/${sprintId}`, { method: "POST", body: JSON.stringify({ state: "closed" }) });
+      return { ok: true as const };
     },
     async boards() {
       const boards: { id: number; name: string; project: string | null }[] = [];

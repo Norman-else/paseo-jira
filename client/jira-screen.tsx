@@ -207,7 +207,7 @@ function useStyles(theme: Theme, compact: boolean) {
 type Styles = ReturnType<typeof useStyles>;
 
 type PickerOption = { value: string; group: string; label: string };
-type Picking = { label: string; options: PickerOption[]; value: string; onChange(value: string): void };
+type Picking = { label: string; options: PickerOption[]; value: string; searchable?: boolean; onChange(value: string): void };
 
 function Field({ label, styles, children }: { label: string; styles: Styles; children: ReactNode }) {
   return (
@@ -256,6 +256,7 @@ function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): v
   const [filter, setFilter] = useState("");
   const [hovered, setHovered] = useState<string | null>(null);
   const { height } = useWindowDimensions();
+  const searchable = picking.searchable !== false;
   const needle = filter.trim().toLowerCase();
   const groups = new Map<string, PickerOption[]>();
   for (const o of picking.options) {
@@ -264,7 +265,7 @@ function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): v
   }
   return (
     // Size to the available options, keeping the same height while searching.
-    <View style={{ gap: 12, height: Math.min(420, height - 48, 126 + picking.options.length * 40 + new Set(picking.options.map((o) => o.group).filter(Boolean)).size * 26), padding: 12, borderRadius: 8,
+    <View style={{ gap: 12, height: Math.min(420, height - 48, (searchable ? 126 : 68) + picking.options.length * 40 + new Set(picking.options.map((o) => o.group).filter(Boolean)).size * 26), padding: 12, borderRadius: 8,
       borderWidth: 1, borderColor: styles.fieldBorder.borderColor, backgroundColor: styles.card.backgroundColor,
       shadowColor: "#000000", shadowOpacity: 0.22, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -272,7 +273,7 @@ function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): v
         <Pressable accessibilityRole="button" accessibilityLabel={`Close ${picking.label} menu`} onPress={onDone}
           style={{ padding: 6 }}><Icon name="X" size={16} color={styles.muted.color} /></Pressable>
       </View>
-      <View style={styles.searchBox}>
+      {searchable ? <View style={styles.searchBox}>
         <Icon name="Search" size={16} color={styles.muted.color} />
         <RNTextInput
           style={styles.bareInput}
@@ -288,7 +289,7 @@ function PickerView({ picking, onDone, styles }: { picking: Picking; onDone(): v
             <Icon name="X" size={14} color={styles.muted.color} />
           </Pressable>
         ) : null}
-      </View>
+      </View> : null}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }} keyboardShouldPersistTaps="handled">
         {[...groups].map(([group, items]) => (
           <View key={group} style={{ gap: 2 }}>
@@ -590,7 +591,7 @@ function StartModal({
             </Field>
             <Text style={[styles.muted, { fontSize: 12 }]}>Path on your Mac or other DevSpace machine. Remembered for this project on the selected host.</Text>
             <PickerTrigger
-              picking={{ label: "Start from", value: startFrom, options: [
+              picking={{ label: "Start from", value: startFrom, searchable: false, options: [
                 { value: "default", label: "Repository default branch (recommended)", group: "" },
                 { value: "current", label: "Current checkout", group: "" },
                 { value: "custom", label: "Custom branch, tag or commit", group: "" },

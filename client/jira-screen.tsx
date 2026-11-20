@@ -371,6 +371,7 @@ function StartModal({
   const [useWorktree, setUseWorktree] = useState(false);
   const [baseBranch, setBaseBranch] = useState("");
   const [model, setModel] = useState("");
+  const [thinking, setThinking] = useState("");
   const [devspaceDrafts, setDevspaceDrafts] = useState<Record<string, DevspaceTarget>>({});
   const [choosingDirectory, setChoosingDirectory] = useState(false);
   const [customBaseRef, setCustomBaseRef] = useState(false);
@@ -387,13 +388,24 @@ function StartModal({
       return lists.flatMap((l) =>
         (l.models ?? [])
           .filter((m) => m.isSelectable !== false)
-          .map((m) => ({ value: `${l.provider}/${m.id}`, group: l.provider, label: m.label, isDefault: m.isDefault })),
+          .map((m) => ({
+            value: `${l.provider}/${m.id}`, group: l.provider, label: m.label, isDefault: m.isDefault,
+            thinking: (m.thinkingOptions ?? []).map((o) => ({ value: o.id, label: o.label, group: "" })),
+            defaultThinking: m.defaultThinkingOptionId ?? m.thinkingOptions?.find((o) => o.isDefault)?.id ?? "",
+          })),
       );
     },
   });
   useEffect(() => {
     if (!model && models.data?.[0]) setModel((models.data.find((m) => m.isDefault) ?? models.data[0]).value);
   }, [models.data, model]);
+  const selectedModel = models.data?.find((m) => m.value === model);
+  // Thinking levels belong to a model: switching models resets to that model's default.
+  const chooseModel = (value: string) => {
+    setModel(value);
+    setThinking("");
+  };
+  const thinkingOptionId = thinking || selectedModel?.defaultThinking || undefined;
 
   const workspaces = useQuery({
     queryKey: ["projects"],
@@ -441,12 +453,13 @@ function StartModal({
       if (!project) throw new Error("Choose a project");
       const cwd = project.root;
       if (!model) throw new Error("Choose a model");
-      const config = { provider: model };
+      const config = { provider: model, ...(thinkingOptionId ? { thinkingOptionId } : {}) };
       if (devspaceWorktreeEnabled) {
         const options = devspaceWorkspaceOptions({
           project,
           ticket,
           provider: model,
+          thinkingOptionId,
           prompt,
           target: devspaceTarget,
           attachments,
@@ -532,7 +545,7 @@ function StartModal({
           <Text style={styles.error}>{models.error.message}</Text>
         ) : models.data ? (
           <PickerTrigger
-            picking={{ label: "Model", options: models.data, value: model, onChange: setModel }}
+            picking={{ label: "Model", options: models.data, value: model, onChange: chooseModel }}
             onOpen={setPicking}
             onClose={() => setPicking(null)} expanded={picking === "Model"} disabled={start.isPending}
             styles={styles}
@@ -540,6 +553,14 @@ function StartModal({
         ) : (
           <Spinner color={styles.muted.color} />
         )}
+        {selectedModel?.thinking.length ? (
+          <PickerTrigger
+            picking={{ label: "Thinking", options: selectedModel.thinking, value: thinkingOptionId ?? "", onChange: setThinking }}
+            onOpen={setPicking}
+            onClose={() => setPicking(null)} expanded={picking === "Thinking"} disabled={start.isPending}
+            styles={styles}
+          />
+        ) : null}
         <View style={[styles.field, { paddingVertical: 10 }]}>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={styles.text}>Use worktree</Text>
@@ -1204,7 +1225,7 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
           value={input}
           onChangeText={setInput}
           onSubmitEditing={() => setQuery(input.trim())}
-          placeholder="Search this sprint by key or text, Enter to search"
+          placeholder="Search by key, number (6404) or text, Enter to search"
           placeholderTextColor={c.foregroundMuted}
           returnKeyType="search"
           accessibilityLabel="Search Jira"

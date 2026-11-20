@@ -84,6 +84,7 @@ export function devspaceWorkspaceOptions<Attachment>(input: {
   project: { id: string; root: string };
   ticket: { identifier: string; title: string };
   provider: string;
+  thinkingOptionId?: string;
   prompt: string;
   target: DevspaceTarget;
   attachments?: Attachment[];
@@ -93,7 +94,7 @@ export function devspaceWorkspaceOptions<Attachment>(input: {
     title: `${input.ticket.identifier} ${input.ticket.title}`,
     agent: {
       cwd: input.project.root,
-      config: { provider: input.provider },
+      config: { provider: input.provider, ...(input.thinkingOptionId ? { thinkingOptionId: input.thinkingOptionId } : {}) },
       prompt: devspaceWorktreePrompt({ ...input.target, branchName: input.ticket.identifier, taskPrompt: input.prompt }),
       attachments: input.attachments,
       title: input.ticket.identifier,

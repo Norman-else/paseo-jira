@@ -7,15 +7,25 @@ export function buildJql(query: string, defaultJql: string): string {
   return `text ~ "${q.replace(/["\\]/g, "\\$&")}" ORDER BY updated DESC`;
 }
 
-export async function buildSearchJql(query: string, defaultJql: string, suggestKeys: (query: string) => Promise<string[]>): Promise<string> {
+type SuggestKeys = (query: string) => Promise<string[]>;
+
+/** `key in (...)` for a bare ticket number such as "6404" (any project), or null when nothing matches exactly. */
+async function ticketNumberJql(query: string, suggestKeys: SuggestKeys): Promise<string | null> {
   const q = query.trim();
-  if (/^\d+$/.test(q)) {
-    const keys = [...new Set((await suggestKeys(q))
-      .filter((key) => TICKET_KEY.test(key) && key.slice(key.lastIndexOf("-") + 1) === q)
-      .map((key) => key.toUpperCase()))];
-    if (keys.length) return `key in (${keys.map((key) => `"${key}"`).join(", ")}) ORDER BY updated DESC`;
-  }
-  return buildJql(query, defaultJql);
+  if (!/^\d+$/.test(q)) return null;
+  const keys = [...new Set((await suggestKeys(q))
+    .filter((key) => TICKET_KEY.test(key) && key.slice(key.lastIndexOf("-") + 1) === q)
+    .map((key) => key.toUpperCase()))];
+  return keys.length ? `key in (${keys.map((key) => `"${key}"`).join(", ")}) ORDER BY updated DESC` : null;
+}
+
+export async function buildSearchJql(query: string, defaultJql: string, suggestKeys: SuggestKeys): Promise<string> {
+  return await ticketNumberJql(query, suggestKeys) ?? buildJql(query, defaultJql);
+}
+
+/** Jira screen search: a bare ticket number finds that ticket like a full key does, ignoring sprint filters. */
+export async function buildListSearchJql(input: Parameters<typeof buildListJql>[0], suggestKeys: SuggestKeys): Promise<string> {
+  return await ticketNumberJql(input.query, suggestKeys) ?? buildListJql(input);
 }
 
 /** JQL for the Jira screen: given sprints (null = all open sprints), optionally only mine, optional text/key search. */

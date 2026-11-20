@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildJql, buildListJql, buildSearchJql } from "./server/jql.ts";
+import { buildJql, buildListJql, buildListSearchJql, buildSearchJql } from "./server/jql.ts";
 
 test("attachment search resolves a bare ticket number across projects and deduplicates picker results", async () => {
   const jql = await buildSearchJql(" 6094 ", "DEFAULT", async (query) => {
@@ -33,4 +33,11 @@ test("buildListJql", () => {
   assert.equal(buildListJql({ query: "", sprintIds: null, mine: true }), "sprint in openSprints() AND assignee = currentUser() AND statusCategory != Done" + order);
   assert.equal(buildListJql({ query: "pay", sprintIds: [42, 7], mine: false, showDone: true }), 'sprint in (42, 7) AND text ~ "pay"' + order);
   assert.equal(buildListJql({ query: "psos-1", sprintIds: [42], mine: true }), 'key = "PSOS-1"');
+});
+
+test("Jira screen search finds a bare ticket number like a full key, else keeps sprint text search", async () => {
+  const input = { query: " 6404 ", sprintIds: [42], mine: true };
+  assert.equal(await buildListSearchJql(input, async () => ["PSOS-6404", "PSOS-16404"]), 'key in ("PSOS-6404") ORDER BY updated DESC');
+  assert.equal(await buildListSearchJql(input, async () => []), buildListJql(input));
+  assert.equal(await buildListSearchJql({ ...input, query: "pay" }, async () => { throw new Error("Picker is only for bare numbers"); }), buildListJql({ ...input, query: "pay" }));
 });

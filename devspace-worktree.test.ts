@@ -124,3 +124,10 @@ test("a VPS session can launch against a Mac DevSpace directory without treating
   assert.ok(options.agent.prompt.includes(JSON.stringify(target.projectPath)));
   assert.match(options.agent.prompt, /project and Git repository are on the machine served by the configured DevSpace MCP/);
 });
+
+test("DevSpace tasks pass the chosen thinking level to the agent, and omit it when unset", () => {
+  const base = { project: { id: "p", root: "/r" }, ticket: { identifier: "PSOS-1", title: "T" }, provider: "claude/opus", prompt: "Do it",
+    target: { projectPath: "/x", baseRef: "origin/master" } };
+  assert.deepEqual(devspaceWorkspaceOptions({ ...base, thinkingOptionId: "high" }).agent.config, { provider: "claude/opus", thinkingOptionId: "high" });
+  assert.deepEqual(devspaceWorkspaceOptions(base).agent.config, { provider: "claude/opus" });
+});

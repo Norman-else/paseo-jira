@@ -11,6 +11,7 @@ type PopoverNode = {
   addEventListener(name: string, callback: (event: { newState?: string }) => void): void;
   removeEventListener(name: string, callback: (event: { newState?: string }) => void): void;
 };
+declare const ResizeObserver: new (callback: () => void) => { observe(target: unknown): void; disconnect(): void };
 type DesktopBridge = {
   invoke(command: string): Promise<unknown>;
   dialog: { open(options: { directory: boolean; title: string; defaultPath?: string }): Promise<string | null> };
@@ -66,10 +67,14 @@ export function mountWebPopover(surface: unknown, anchor: unknown, onDismiss: ()
   node.addEventListener("toggle", toggle);
   node.showPopover({ source: trigger });
   position();
+  // Content that loads after opening changes the height; re-place it so it stays inside the window.
+  const resized = new ResizeObserver(() => { if (active) position(); });
+  resized.observe(node);
   window.addEventListener("scroll", scroll, true);
   window.addEventListener("resize", resize);
   return () => {
     active = false;
+    resized.disconnect();
     node.removeEventListener("toggle", toggle);
     window.removeEventListener("scroll", scroll, true);
     window.removeEventListener("resize", resize);

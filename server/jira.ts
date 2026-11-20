@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defaultPrompt, defaultSprints, jiraSettings } from "../shared/jira";
-import { buildSearchJql, buildListJql } from "./jql";
+import { buildListSearchJql, buildSearchJql } from "./jql";
 import { descriptionToMarkdown } from "./description-markdown";
 import { completionStore, createSprintCompletion, type CompletionStore } from "./sprint-completion";
 
@@ -167,6 +167,13 @@ export function createJiraClient(settings: JiraSettings, recoveryStore?: Complet
     return { id: chosen.id, name: chosen.name, state: chosen.state };
   }
 
+  /** Issue keys the Jira picker suggests for a query, across all visible issues (not just recently viewed). */
+  async function pickerKeys(query: string) {
+    const params = new URLSearchParams({ query, currentJQL: "ORDER BY updated DESC" });
+    const picker = IssuePickerSchema.parse(await request(`/rest/api/3/issue/picker?${params}`));
+    return picker.sections.flatMap((section) => section.issues.map((issue) => issue.key));
+  }
+
   return {
     async list(input: { query: string; sprintId: number | null; mine: boolean; showDone: boolean }) {
       const customFields = await getFields();
@@ -178,7 +185,7 @@ export function createJiraClient(settings: JiraSettings, recoveryStore?: Complet
         if (sprintIds.length === 0) return { items: [] };
       }
       const body = {
-        jql: buildListJql({ query: input.query, sprintIds, mine: input.mine, showDone: input.showDone }),
+        jql: await buildListSearchJql({ query: input.query, sprintIds, mine: input.mine, showDone: input.showDone }, pickerKeys),
         maxResults: 100,
         fields: ["summary", "status", "assignee", ...(field ? [field] : []), ...pointFields.map((f) => f.id)],
       };
@@ -344,12 +351,7 @@ export function createJiraClient(settings: JiraSettings, recoveryStore?: Complet
     },
     async search(query: string) {
       const body = {
-        jql: await buildSearchJql(query, settings.defaultJql, async (number) => {
-          // Search all visible issues, not just the user's recently viewed tickets.
-          const params = new URLSearchParams({ query: number, currentJQL: "ORDER BY updated DESC" });
-          const picker = IssuePickerSchema.parse(await request(`/rest/api/3/issue/picker?${params}`));
-          return picker.sections.flatMap((section) => section.issues.map((issue) => issue.key));
-        }),
+        jql: await buildSearchJql(query, settings.defaultJql, pickerKeys),
         maxResults: 50,
         fields: ["summary", "status", "assignee"],
       };

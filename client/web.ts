@@ -11,11 +11,33 @@ type PopoverNode = {
   addEventListener(name: string, callback: (event: { newState?: string }) => void): void;
   removeEventListener(name: string, callback: (event: { newState?: string }) => void): void;
 };
+type DesktopBridge = {
+  invoke(command: string): Promise<unknown>;
+  dialog: { open(options: { directory: boolean; title: string; defaultPath?: string }): Promise<string | null> };
+};
 declare const window: {
   innerWidth: number; innerHeight: number;
   addEventListener(name: string, callback: (event: { target: unknown }) => void, capture?: boolean): void;
   removeEventListener(name: string, callback: (event: { target: unknown }) => void, capture?: boolean): void;
+  paseoDesktop?: DesktopBridge;
 };
+
+// ponytail: the Paseo desktop preload bridge is not part of the plugin SDK. It is absent on mobile and in
+// plain browsers, where the system folder button stays hidden. Switch to an SDK folder picker once one exists.
+const desktop = () => (Platform.OS === "web" ? window.paseoDesktop : undefined);
+
+/** serverId of the daemon on the computer running the Paseo desktop app; null elsewhere. */
+export async function desktopServerId(): Promise<string | null> {
+  const status = await desktop()?.invoke("desktop_daemon_status") as { serverId?: string } | undefined;
+  return status?.serverId || null;
+}
+
+/** System folder dialog on the desktop app's computer; null when cancelled. */
+export function pickDesktopDirectory(defaultPath?: string): Promise<string | null> {
+  const bridge = desktop();
+  if (!bridge) return Promise.reject(new Error("The system folder picker requires the Paseo desktop app."));
+  return bridge.dialog.open({ directory: true, title: "Choose DevSpace project directory", defaultPath });
+}
 
 /** Promote an existing RN View to the browser's top layer, above modal overflow clipping. */
 export function mountWebPopover(surface: unknown, anchor: unknown, onDismiss: () => void, matchAnchorWidth = false): (() => void) | null {

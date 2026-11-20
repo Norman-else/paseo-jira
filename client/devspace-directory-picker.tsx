@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View, useWindowDimensions } from "react-native";
 import { getPaseoClient, useHosts, type PluginScreenProps } from "@getpaseo/plugin/client";
 import { Icon, ScrollView, TextInput } from "@getpaseo/plugin/client/ui";
 import { defaultDirectoryHost, directoryProjects } from "./start-projects";
+import { desktopServerId, pickDesktopDirectory } from "./web";
 
 export function DevspaceDirectoryPicker({ theme, launchHostId, selectedPath, onChoose, onCancel }: {
   theme: PluginScreenProps["theme"];
@@ -27,6 +28,13 @@ export function DevspaceDirectoryPicker({ theme, launchHostId, selectedPath, onC
     queryFn: async () => directoryProjects((await getPaseoClient(hostId!).projects.list()).projects),
     enabled: !!hostId && online,
   });
+  // The system dialog browses the computer running this app, so offer it only when that computer is selected.
+  const localServerId = useQuery({ queryKey: ["paseo-desktop-server-id"], queryFn: desktopServerId, staleTime: Infinity });
+  const canPickFolder = online && !!hostId && hostId === localServerId.data;
+  const pickFolder = useMutation({
+    mutationFn: () => pickDesktopDirectory(selectedPath || undefined),
+    onSuccess: (path) => { if (path) onChoose(path); },
+  });
   const needle = filter.trim().toLowerCase();
   const visible = (projects.data ?? []).filter((project) => `${project.name} ${project.path}`.toLowerCase().includes(needle));
   const text = { color: theme.colors.foreground };
@@ -43,7 +51,7 @@ export function DevspaceDirectoryPicker({ theme, launchHostId, selectedPath, onC
           <Icon name="X" size={16} color={theme.colors.foregroundMuted} />
         </Pressable>
       </View>
-      <Text style={muted}>Choose the computer hosting your DevSpace project, then a registered project directory. Other directories can be entered in the Start form.</Text>
+      <Text style={muted}>Choose the computer hosting your DevSpace project, then a registered project directory. On this computer you can also choose any folder; for other computers, enter the path in the Start form.</Text>
       <View style={{ gap: 4 }}>
         {hosts.map((candidate) => (
           <Pressable key={candidate.serverId} accessibilityRole="button"
@@ -60,6 +68,18 @@ export function DevspaceDirectoryPicker({ theme, launchHostId, selectedPath, onC
           </Pressable>
         ))}
       </View>
+      {canPickFolder ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Choose any folder on this computer"
+          accessibilityState={{ disabled: pickFolder.isPending }} disabled={pickFolder.isPending}
+          onPress={() => pickFolder.mutate()}
+          style={({ pressed }) => [row, { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1,
+            borderColor: theme.colors.border, backgroundColor: pressed ? theme.colors.surface2 : theme.colors.surface1 }]}>
+          <Icon name="FolderOpen" size={16} color={text.color} />
+          <Text style={[text, { flex: 1 }]}>Choose folder…</Text>
+          {pickFolder.isPending ? <ActivityIndicator size="small" color={theme.colors.foregroundMuted} /> : null}
+        </Pressable>
+      ) : null}
+      {pickFolder.error ? <Text style={{ color: theme.colors.statusDanger }}>{pickFolder.error.message}</Text> : null}
       <TextInput value={filter} onChangeText={setFilter} placeholder="Search project name or path"
         autoFocus
         accessibilityLabel="Search DevSpace project directories"
@@ -75,7 +95,8 @@ export function DevspaceDirectoryPicker({ theme, launchHostId, selectedPath, onC
             </Pressable>
           </View>
           : visible.length === 0 ? <Text style={[muted, { padding: 12 }]}>
-            {projects.data?.length ? "No matching project directories." : "No registered projects on this computer. Add a project in Paseo, or enter its path in the Start form."}
+            {projects.data?.length ? "No matching project directories." : canPickFolder ? "No registered projects on this computer. Use Choose folder… to pick any folder."
+              : "No registered projects on this computer. Add a project in Paseo, or enter its path in the Start form."}
           </Text>
           : visible.map((project) => (
             <Pressable key={project.path} accessibilityRole="button"

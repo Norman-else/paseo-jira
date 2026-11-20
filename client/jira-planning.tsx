@@ -53,7 +53,7 @@ export function StoryPointsModal({ item, theme, onClose, onChanged }: CommonProp
     <Modal title={`Story Points · ${item.key}`} open onOpenChange={(open) => !open && close()}>
       <Modal.Content>
         <Text style={{ color: c.foreground, fontSize: 15 }}>{item.title}</Text>
-        {fields.isPending ? <ActivityIndicator color={c.foregroundMuted} /> : fields.error ? (
+        {fields.isPending ? <ActivityIndicator size={14} color={c.foregroundMuted} /> : fields.error ? (
           <View style={{ gap: 8 }}>
             <Text style={{ color: c.statusDanger }}>{fields.error.message}</Text>
             <Action label="Retry" theme={theme} disabled={fields.isFetching} onPress={() => { void fields.refetch(); }} />
@@ -150,7 +150,7 @@ export function SprintActionModal({ sprint, theme, onClose, onChanged, compact =
             ))}
             {validation ? <Text style={{ color: c.statusDanger }}>{validation}</Text> : null}
           </View>
-        ) : preview.isPending ? <ActivityIndicator color={c.foregroundMuted} /> : preview.error ? (
+        ) : preview.isPending ? <ActivityIndicator size={14} color={c.foregroundMuted} /> : preview.error ? (
           <View style={{ gap: 10 }}>
             <Text style={{ color: c.statusDanger }}>{preview.error.message}</Text>
             <Action label="Retry preview" theme={theme} disabled={preview.isFetching} onPress={() => { void preview.refetch(); }} />

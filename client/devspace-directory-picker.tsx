@@ -94,7 +94,7 @@ export function DevspaceDirectoryPicker({ theme, launchHostId, selectedPath, onC
             onPress={() => pickFolder.mutate()} {...hover(CHOOSE_FOLDER)}
             style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, borderRadius: 8,
               borderWidth: 1, borderColor: c.border, backgroundColor: pressed || hovered === CHOOSE_FOLDER ? c.surface2 : "transparent" })}>
-            {pickFolder.isPending ? <ActivityIndicator size="small" color={c.foregroundMuted} />
+            {pickFolder.isPending ? <ActivityIndicator size={14} color={c.foregroundMuted} />
               : <Icon name="FolderOpen" size={14} color={c.foreground} />}
             <Text style={text}>Choose folder…</Text>
           </Pressable>
@@ -105,7 +105,7 @@ export function DevspaceDirectoryPicker({ theme, launchHostId, selectedPath, onC
       <ScrollView style={{ flexGrow: 0, flexShrink: 1 }} contentContainerStyle={{ gap: 2 }} keyboardShouldPersistTaps="handled">
         {!hostId ? message("Select a computer to see its projects.")
           : !online ? message(`${host?.label ?? "This computer"} is offline. Reconnect it to browse its projects.`)
-          : projects.isPending ? <ActivityIndicator color={c.foregroundMuted} style={{ padding: 16 }} />
+          : projects.isPending ? <ActivityIndicator size={14} color={c.foregroundMuted} style={{ padding: 16 }} />
           : projects.error ? <View style={{ gap: 8, paddingVertical: 16, paddingHorizontal: 10 }}>
             <Text style={{ color: c.statusDanger, fontSize: 12 }}>{projects.error.message}</Text>
             <Pressable accessibilityRole="button" onPress={() => void projects.refetch()}>

@@ -40,7 +40,7 @@ import { DEVSPACE_DEFAULT_BRANCH, devspaceTargetError, devspaceWorkspaceOptions,
 import { DevspaceDirectoryPicker } from "./devspace-directory-picker";
 
 function Spinner({ color }: { color: string }) {
-  return <ActivityIndicator color={color} style={{ paddingVertical: 16 }} />;
+  return <ActivityIndicator size={14} color={color} style={{ paddingVertical: 16 }} />;
 }
 
 type Ticket = RpcOutput<typeof searchTicketsRpc>["items"][number];
@@ -752,7 +752,7 @@ function AssignModal({
         ) : null}
       </View>
       {change.isPending && change.variables?.accountId === target.accountId ? (
-        <ActivityIndicator size="small" color={styles.muted.color} />
+        <ActivityIndicator size={14} color={styles.muted.color} />
       ) : null}
       {current ? <Icon name="Check" size={16} color={styles.accent.color} /> : null}
     </Pressable>
@@ -773,7 +773,7 @@ function AssignModal({
               autoFocus
               accessibilityLabel="Search people"
             />
-            {users.isFetching ? <ActivityIndicator size="small" color={styles.muted.color} /> : null}
+            {users.isFetching ? <ActivityIndicator size={14} color={styles.muted.color} /> : null}
           </View>
           {change.error ? <Text style={styles.error}>{change.error.message}</Text> : null}
           {users.error ? <Text style={styles.error}>{users.error.message}</Text> : null}
@@ -864,7 +864,7 @@ function StatusModal({
                   <Text style={[styles.text, { flex: 1 }, highlighted && { color: styles.accent.color }]} numberOfLines={1}>
                     {t.name === t.to ? t.to : `${t.name} → ${t.to}`}
                   </Text>
-                  {pending ? <ActivityIndicator size="small" color={styles.muted.color} /> : null}
+                  {pending ? <ActivityIndicator size={14} color={styles.muted.color} /> : null}
                   {current ? <Icon name="Check" size={16} color={styles.accent.color} /> : null}
                 </Pressable>
               );
@@ -935,7 +935,7 @@ function TicketDetails({ item, styles, compact }: { item: ListItem; styles: Styl
       </View>
       {details.isPending ? (
         <View style={{ alignItems: "center", paddingVertical: 20, gap: 8 }}>
-          <ActivityIndicator color={styles.muted.color} />
+          <ActivityIndicator size={14} color={styles.muted.color} />
           <Text style={[styles.muted, { fontSize: 12 }]}>Loading ticket details…</Text>
         </View>
       ) : details.error ? (
@@ -1202,7 +1202,7 @@ export function JiraScreen({ theme, host, layout, navigation, onOpenSettings }: 
           style={({ pressed }) => ({ padding: 6, borderRadius: 6, backgroundColor: pressed ? c.surface2 : "transparent" })}
         >
           {refreshing ? (
-            <ActivityIndicator size="small" color={c.foregroundMuted} style={{ width: 16, height: 16 }} />
+            <ActivityIndicator size={14} color={c.foregroundMuted} style={{ width: 16, height: 16 }} />
           ) : (
             <Icon name="RefreshCw" size={16} color={c.foregroundMuted} />
           )}

@@ -93,7 +93,7 @@ function BoardPicker({ settings, theme }: { settings: Ready; theme: PluginSurfac
           placeholder="Board or project key"
           onChangeText={setFilter}
         />
-        {boards.isPending ? <ActivityIndicator color={muted.color} style={{ padding: 12 }} /> : null}
+        {boards.isPending ? <ActivityIndicator size={14} color={muted.color} style={{ padding: 12 }} /> : null}
         {boards.error ? <Text style={{ color: theme.colors.statusDanger, padding: 12 }}>{boards.error.message}</Text> : null}
         {visible.slice(0, 50).map((b) => (
           <SettingsSwitch
@@ -197,7 +197,7 @@ function BackToJira({ onPress }: { onPress(): void }) {
 export function JiraSettings({ theme, onBack }: PluginSurfaceProps & { onBack?: () => void }) {
   const settings = useSettings(jiraSettings);
   const back = onBack ? <BackToJira onPress={onBack} /> : null;
-  if (settings.status === "loading") return <ActivityIndicator style={{ padding: 12 }} />;
+  if (settings.status === "loading") return <ActivityIndicator size={14} style={{ padding: 12 }} />;
   if (settings.status !== "ready") {
     return (
       <>

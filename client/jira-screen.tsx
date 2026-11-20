@@ -666,7 +666,8 @@ function StartModal({
           <Spinner color={styles.muted.color} />
         )}
         {start.error ? <Text style={styles.error}>{start.error.message}</Text> : null}
-        {attemptedStart && problem ? <Text accessibilityRole="alert" style={[styles.error, { fontSize: 13, lineHeight: 19 }]}>{problem.message}</Text> : null}
+        {/* A running start saves DevSpace settings itself; that save is not a problem to report. */}
+        {attemptedStart && !start.isPending && problem ? <Text accessibilityRole="alert" style={[styles.error, { fontSize: 13, lineHeight: 19 }]}>{problem.message}</Text> : null}
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ disabled: start.isPending, busy: start.isPending }}

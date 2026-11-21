@@ -1,117 +1,147 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runPaseoCli, updateJiraPlugin } from "./server/plugin-update.ts";
+import type { PluginUpdateProposal } from "@getpaseo/protocol/messages";
+import { applyJiraPluginUpdate, checkJiraPluginUpdate } from "./server/plugin-update.ts";
 
-const unusedCli = async () => {
-  throw new Error("CLI fallback should not be called");
+const id = "paseo-jira";
+const current = "1".repeat(40);
+const target = "2".repeat(40);
+const remote = "https://github.com/Norman-else/paseo-jira.git";
+const proposal: PluginUpdateProposal = {
+  id,
+  expected: {
+    identity: { kind: "git", remote, pluginPath: "." },
+    installationRoot: "/installed/paseo-jira",
+    revision: current,
+  },
+  target: { kind: "git", commit: target },
 };
+const update = (candidate = proposal) => ({ id, outcome: "update" as const, proposal: candidate });
+const installed = { id, outcome: "updated" as const };
+const unused = async () => assert.fail("Unexpected update call");
 
-test("preview current and installed-newer do not apply an update", async () => {
-  for (const outcome of ["current", "installed-newer"]) {
-    const result = await updateJiraPlugin({
-      previewPluginUpdates: async () => [{ id: "paseo-jira", outcome }],
-      applyPluginUpdates: unusedCli,
-    }, unusedCli);
-    assert.equal(result.status, "current");
+test("host check reports current, newer, and local installations without applying", async () => {
+  for (const outcome of ["current", "installed-newer", "local"] as const) {
+    const result = await checkJiraPluginUpdate({
+      previewPluginUpdates: async () => [{ id, outcome }],
+      applyPluginUpdates: unused,
+    }, unused);
+    assert.equal(result.status, outcome === "local" ? "local" : "current");
   }
 });
 
-test("preview local leaves directory installations under source control", async () => {
-  const result = await updateJiraPlugin({
-    previewPluginUpdates: async () => [{ id: "paseo-jira", outcome: "local" }],
-    applyPluginUpdates: unusedCli,
-  }, unusedCli);
-
-  assert.equal(result.status, "local");
-  assert.match(result.message, /source directory/i);
-});
-
-test("preview update passes the proposal to apply", async () => {
-  const proposal = { id: "proposal-1", target: { kind: "git", commit: "abc123" } };
-  let applied: unknown[] = [];
-  const result = await updateJiraPlugin({
+test("host check shows the source and revision, and only confirmation applies the proposal", async () => {
+  const applied: unknown[] = [];
+  const host = {
     plugins: {
       previewPluginUpdates: async (input: unknown) => {
-        assert.deepEqual(input, { pluginId: "paseo-jira" });
-        return [{ id: "paseo-jira", outcome: "update", proposal }];
+        assert.deepEqual(input, { pluginId: id });
+        const privateRemote = "https://name:secret@github.com/Norman-else/paseo-jira.git?token=private";
+        return [update({ ...proposal, expected: { ...proposal.expected, identity: { kind: "git", remote: privateRemote, pluginPath: "." } } })];
       },
       applyPluginUpdates: async (proposals: unknown[]) => {
-        applied = proposals;
-        return [{ id: "paseo-jira", outcome: "updated" }];
+        applied.push(...proposals);
+        return [installed];
       },
     },
-  }, unusedCli);
+  };
 
+  const preview = await checkJiraPluginUpdate(host, unused);
+  assert.equal(preview.status, "available");
+  assert.equal(preview.source, remote);
+  assert.equal(preview.currentRevision, current);
+  assert.equal(preview.targetRevision, target);
+  assert.equal(preview.latestFromSource, false);
+  assert.deepEqual(applied, []);
+
+  await assert.rejects(applyJiraPluginUpdate(host, "", unused), /check for updates again/i);
+  assert.deepEqual(applied, []);
+  const result = await applyJiraPluginUpdate(host, preview.confirmation, unused);
   assert.equal(result.status, "updated");
-  assert.deepEqual(applied, [proposal]);
+  assert.deepEqual(applied, [ (await host.plugins.previewPluginUpdates({ pluginId: id }))[0].proposal ]);
 });
 
 test("preview and apply failures preserve host errors", async () => {
-  await assert.rejects(updateJiraPlugin({
-    previewPluginUpdates: async () => [{ id: "paseo-jira", outcome: "error", error: "Preview failed" }],
-    applyPluginUpdates: unusedCli,
-  }, unusedCli), /Preview failed/);
+  await assert.rejects(checkJiraPluginUpdate({
+    previewPluginUpdates: async () => [{ id, outcome: "error", error: "Preview failed" }],
+    applyPluginUpdates: unused,
+  }, unused), /Preview failed/);
 
-  await assert.rejects(updateJiraPlugin({
-    previewPluginUpdates: async () => [{ id: "paseo-jira", outcome: "update", proposal: { id: "proposal-1" } }],
-    applyPluginUpdates: async () => [{ id: "paseo-jira", outcome: "error", error: "Apply failed" }],
-  }, unusedCli), /Apply failed/);
+  const host = {
+    previewPluginUpdates: async () => [update()],
+    applyPluginUpdates: async () => [{ id, outcome: "error", error: "Apply failed" }],
+  };
+  const preview = await checkJiraPluginUpdate(host, unused);
+  assert.equal(preview.status, "available");
+  await assert.rejects(applyJiraPluginUpdate(host, preview.confirmation, unused), /Apply failed/);
 });
 
-test("preview update without a proposal is rejected", async () => {
-  await assert.rejects(updateJiraPlugin({
-    previewPluginUpdates: async () => [{ id: "paseo-jira", outcome: "update" }],
-    applyPluginUpdates: unusedCli,
-  }, unusedCli), /proposal/i);
+test("update without a proposal cannot proceed", async () => {
+  await assert.rejects(checkJiraPluginUpdate({
+    previewPluginUpdates: async () => [{ id, outcome: "update" }],
+    applyPluginUpdates: unused,
+  }, unused), /proposal/i);
 });
 
-test("legacy source updates map their updated flag", async () => {
-  for (const updated of [true, false]) {
-    const result = await updateJiraPlugin({
-      updatePluginSources: async (pluginId: string) => {
-        assert.equal(pluginId, "paseo-jira");
-        return [{ id: "paseo-jira", updated }];
-      },
-    }, unusedCli);
-    assert.equal(result.status, updated ? "updated" : "current");
-  }
+test("CLI check is read-only and a second action installs only the confirmed Git commit", async () => {
+  const calls: string[][] = [];
+  const cli = async (args: string[]) => {
+    calls.push(args);
+    return args.includes("--check") ? [update()] : [installed];
+  };
+  // An older write-only host API must not bypass the CLI preview.
+  const host = { updatePluginSources: unused };
+  const preview = await checkJiraPluginUpdate(host, cli);
+  assert.equal(preview.status, "available");
+  assert.equal(preview.source, remote);
+  assert.equal(preview.latestFromSource, false);
+  assert.deepEqual(calls, [["--check"]]);
+
+  const result = await applyJiraPluginUpdate(host, preview.confirmation, cli);
+  assert.equal(result.status, "updated");
+  assert.deepEqual(calls, [["--check"], ["--check"], ["--ref", target]]);
 });
 
-test("partial modern host APIs never fall back to the CLI", async () => {
-  const hosts = [
-    { previewPluginUpdates: async () => [] },
-    { applyPluginUpdates: async () => [] },
+test("CLI never installs if the source, revision, or target changed since confirmation", async () => {
+  const calls: string[][] = [];
+  let candidate = proposal;
+  const cli = async (args: string[]) => {
+    calls.push(args);
+    return [update(candidate)];
+  };
+  const preview = await checkJiraPluginUpdate({}, cli);
+  assert.equal(preview.status, "available");
+
+  const changes: PluginUpdateProposal[] = [
+    { ...proposal, expected: { ...proposal.expected, identity: { kind: "git", remote: "https://github.com/another/jira.git", pluginPath: "." } } },
+    { ...proposal, expected: { ...proposal.expected, revision: "3".repeat(40) } },
+    { ...proposal, target: { kind: "git", commit: "4".repeat(40) } },
   ];
-
-  for (const host of hosts) {
-    await assert.rejects(updateJiraPlugin(host, unusedCli), /incomplete plugin update API/i);
+  for (const changed of changes) {
+    candidate = changed;
+    await assert.rejects(applyJiraPluginUpdate({}, preview.confirmation, cli), /check for updates again/i);
   }
+  assert.deepEqual(calls, Array.from({ length: 4 }, () => ["--check"]));
 });
 
-test("missing host APIs fall back to the Paseo CLI", async () => {
-  let calls = 0;
-  const result = await updateJiraPlugin({}, async () => {
-    calls += 1;
+test("registry CLI fallback discloses the registry and asks for the latest reviewed release", async () => {
+  const registry = { id: "norman-else/jira", url: "https://plugins.paseo.sh" };
+  const registryUpdate = update({
+    ...proposal,
+    expected: { ...proposal.expected, identity: { kind: "git", remote, pluginPath: ".", registry } },
   });
+  const calls: string[][] = [];
+  const cli = async (args: string[]) => {
+    calls.push(args);
+    return args.includes("--check") ? [registryUpdate] : [installed];
+  };
 
-  assert.equal(calls, 1);
-  assert.equal(result.status, "completed");
-});
-
-test("CLI failure includes the manual update command", async () => {
-  await assert.rejects(updateJiraPlugin({}, async () => {
-    throw new Error("paseo is not installed");
-  }), /paseo plugin update paseo-jira/);
-});
-
-test("CLI confirms reviewed updates after the user clicks Check updates", async () => {
-  let command = "";
-  let args: string[] = [];
-  await runPaseoCli(async (actualCommand, actualArgs) => {
-    command = actualCommand;
-    args = actualArgs;
-  });
-
-  assert.equal(command, "paseo");
-  assert.deepEqual(args, ["plugin", "update", "paseo-jira", "--yes"]);
+  const preview = await checkJiraPluginUpdate({}, cli);
+  assert.equal(preview.status, "available");
+  assert.match(preview.source, /norman-else\/jira via https:\/\/plugins\.paseo\.sh/);
+  assert.equal(preview.latestFromSource, true);
+  assert.deepEqual(calls, [["--check"]]);
+  const result = await applyJiraPluginUpdate({}, preview.confirmation, cli);
+  assert.equal(result.status, "updated");
+  assert.deepEqual(calls, [["--check"], ["--check"], ["--yes"]]);
 });

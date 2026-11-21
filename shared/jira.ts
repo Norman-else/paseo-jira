@@ -188,11 +188,28 @@ export const assignRpc = defineRpc({
   output: z.object({ ok: z.literal(true) }),
 });
 
-export const updatePluginRpc = defineRpc({
-  name: "jira.update-plugin",
+export const checkPluginUpdateRpc = defineRpc({
+  name: "jira.check-plugin-update",
   input: z.object({}),
+  output: z.discriminatedUnion("status", [
+    z.object({ status: z.literal("current"), message: z.string() }),
+    z.object({ status: z.literal("local"), message: z.string() }),
+    z.object({
+      status: z.literal("available"),
+      source: z.string(),
+      currentRevision: z.string(),
+      targetRevision: z.string(),
+      latestFromSource: z.boolean(),
+      confirmation: z.string(),
+    }),
+  ]),
+});
+
+export const applyPluginUpdateRpc = defineRpc({
+  name: "jira.apply-plugin-update",
+  input: z.object({ confirmation: z.string().regex(/^[a-f0-9]{64}$/) }),
   output: z.object({
-    status: z.enum(["updated", "current", "local", "completed"]),
+    status: z.literal("updated"),
     message: z.string(),
   }),
 });

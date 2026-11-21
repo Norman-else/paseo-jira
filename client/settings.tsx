@@ -4,13 +4,14 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { useRpc, useSettings, type PluginSurfaceProps, type SettingsState } from "@getpaseo/plugin/client";
 import {
   Icon,
+  Modal,
   SettingsAction,
   SettingsCard,
   SettingsInput,
   SettingsSection,
   SettingsSwitch,
 } from "@getpaseo/plugin/client/ui";
-import { jiraSettings, listBoardsRpc, testConnectionRpc, updatePluginRpc } from "../shared/jira";
+import { applyPluginUpdateRpc, checkPluginUpdateRpc, jiraSettings, listBoardsRpc, testConnectionRpc } from "../shared/jira";
 import { pluginRestartResult } from "../shared/plugin-update";
 
 type Ready = Extract<SettingsState<typeof jiraSettings.schema>, { status: "ready" }>;
@@ -112,12 +113,14 @@ function BoardPicker({ settings, theme }: { settings: Ready; theme: PluginSurfac
 }
 
 function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
-  const updatePlugin = useRpc(updatePluginRpc);
+  const checkPluginUpdate = useRpc(checkPluginUpdateRpc);
+  const applyPluginUpdate = useRpc(applyPluginUpdateRpc);
   const [resultVisible, setResultVisible] = useState(false);
+  const check = useMutation({ mutationFn: () => checkPluginUpdate({}) });
   const update = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (confirmation: string) => {
       try {
-        return await updatePlugin({});
+        return await applyPluginUpdate({ confirmation });
       } catch (error) {
         const restarted = pluginRestartResult(error);
         if (restarted) return restarted;
@@ -125,30 +128,36 @@ function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
       }
     },
   });
-  const isSuccess = update.data?.status === "updated" || update.data?.status === "completed";
+  const available = check.data?.status === "available" ? check.data : null;
+  const result = update.data ?? (check.data?.status !== "available" ? check.data : undefined);
+  const isSuccess = !!update.data;
+  const isPending = check.isPending || update.isPending;
 
   useEffect(() => {
-    if (update.isPending || !update.data) {
+    if (isPending || !result) {
       setResultVisible(false);
       return;
     }
     setResultVisible(true);
     const timeout = setTimeout(() => setResultVisible(false), 5000);
     return () => clearTimeout(timeout);
-  }, [update.data, update.isPending]);
+  }, [result, isPending]);
 
   return (
     <SettingsSection title="Plugin updates">
       <SettingsCard>
         <SettingsAction
           label="Check for updates"
-          hint="Check for a new paseo-jira version and install it when available."
-          actionLabel={update.isPending ? "Updating…" : "Check updates"}
-          disabled={update.isPending}
-          error={update.error?.message}
-          onPress={() => update.mutate()}
+          hint="Review the update source before downloading and installing a new version of Jira."
+          actionLabel={update.isPending ? "Updating…" : check.isPending ? "Checking…" : "Check updates"}
+          disabled={isPending || !!available}
+          error={check.error?.message ?? update.error?.message}
+          onPress={() => {
+            update.reset();
+            check.mutate();
+          }}
         />
-        {resultVisible && update.data ? (
+        {resultVisible && result ? (
           <View
             accessibilityLiveRegion="polite"
             style={{
@@ -170,11 +179,43 @@ function PluginUpdate({ theme }: { theme: PluginSurfaceProps["theme"] }) {
               color={isSuccess ? theme.colors.statusSuccess : theme.colors.foregroundMuted}
             />
             <Text style={{ flex: 1, color: theme.colors.foreground, fontSize: 13, lineHeight: 18 }}>
-              {update.data.message}
+              {result.message}
             </Text>
           </View>
         ) : null}
       </SettingsCard>
+      {available ? (
+        <Modal title="Update Jira?" open onOpenChange={(open) => { if (!open) check.reset(); }}>
+          <Modal.Content>
+            <Text style={{ color: theme.colors.foreground }}>
+              {available.latestFromSource
+                ? "Download and install the latest Jira plugin update from this source?"
+                : "Download and install this version of the Jira plugin?"}
+            </Text>
+            <Text style={{ color: theme.colors.foregroundMuted }}>Update source</Text>
+            <Text selectable style={{ color: theme.colors.foreground }}>{available.source}</Text>
+            <Text selectable style={{ color: theme.colors.foregroundMuted }}>
+              Installed version {available.currentRevision}
+            </Text>
+            {!available.latestFromSource ? (
+              <Text selectable style={{ color: theme.colors.foregroundMuted }}>
+                New version {available.targetRevision}
+              </Text>
+            ) : null}
+            <SettingsCard>
+              <SettingsAction label="Keep the installed version" actionLabel="Cancel" onPress={() => check.reset()} />
+              <SettingsAction
+                label="Update the Jira plugin"
+                actionLabel="Download and install"
+                onPress={() => {
+                  check.reset();
+                  update.mutate(available.confirmation);
+                }}
+              />
+            </SettingsCard>
+          </Modal.Content>
+        </Modal>
+      ) : null}
     </SettingsSection>
   );
 }
